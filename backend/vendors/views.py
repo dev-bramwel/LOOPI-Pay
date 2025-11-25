@@ -76,53 +76,38 @@ def register_vendor(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_vendor(request):
-    """
-    Login vendor and return JWT tokens
-    """
     email = request.data.get('email')
     password = request.data.get('password')
 
     if not email or not password:
-        return Response(
-            {'error': 'Email and password are required'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({'error': 'Email and password are required'}, status=400)
 
-    # Prefer using Django's authenticate (respects auth backends)
-    # Call authenticate without passing the request object to avoid backend-specific issues
-    user = authenticate(email=email, password=password)
-    if user is None:
-        # try authenticating with email keyword in case backend expects it
-        try:
-            user = authenticate(request, email=email, password=password)
-        except Exception:
-            user = None
+    from django.contrib.auth import get_user_model
+    user = get_user_model()
+    print("DEBUG: Users in DB")
+    for u in User.objects.all():
+        print(u.email, u.username)
+
+
+    user = authenticate(request, email=email, password=password)
 
     if user is None:
-        return Response(
-            {'error': 'Invalid credentials'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+        return Response({'error': 'Invalid credentials'}, status=401)
 
-    vendor = user
+    if not getattr(user, 'is_verified', False):
+        return Response({'error': 'Please verify your email'}, status=403)
 
-    if not getattr(vendor, 'is_verified', False):
-        return Response(
-            {'error': 'Please verify your email before logging in'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    # Generate tokens
-    refresh = RefreshToken.for_user(vendor)
+    from rest_framework_simplejwt.tokens import RefreshToken
+    refresh = RefreshToken.for_user(user)
 
     return Response({
         'message': 'Login successful',
-        'vendor': VendorSerializer(vendor).data,
+        'vendor': VendorSerializer(user).data,
         'tokens': {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         }
-    }, status=status.HTTP_200_OK)
+    })
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

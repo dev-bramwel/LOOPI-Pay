@@ -12,6 +12,9 @@ curl -X POST http://127.0.0.1:8000/api/vendors/register/   -H "Content-Type: app
     "phone": "+1234567890"
   }'
 ```
+## Test credentials
+- EMail: vendor1655@test.com
+- Pass : SecurePass123!
 
 ## Login
 

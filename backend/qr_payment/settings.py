@@ -112,8 +112,8 @@ SIMPLE_JWT = {
 }
 
 AUTHENTICATION_BACKENDS = [
-    'vendors.auth_backend.EmailBackend',
-    'django.contrib.auth.backends.ModelBackend',
+    'vendors.auth_backend.AccountAuthBackend',  # custom email backend
+    'django.contrib.auth.backends.ModelBackend', # default fallback
 ]
 
 
