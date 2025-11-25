@@ -116,4 +116,10 @@ test-output/
 # Misc
 coverage_html_report/
 
+# Database files
+# Ignore default SQLite DBs created by Django and other local DB files
 db.sqlite3
+backend/db.sqlite3
+**/db.sqlite3
+*.sqlite3
+*.db

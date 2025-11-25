@@ -167,7 +167,7 @@ def initiate_transaction(request):
     payment_session = PaymentSession.objects.create(
         session_id=session_id,
         amount=amount,
-        vendor=vendor.email,
+        vendor=vendor,
         status='pending'
     )
 

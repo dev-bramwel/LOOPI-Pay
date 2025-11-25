@@ -3,6 +3,7 @@ import hmac
 import json
 import requests
 import qrcode
+from qrcode.constants import ERROR_CORRECT_L
 import io
 import base64
 from django.conf import settings
@@ -10,70 +11,74 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import PaymentSession
 from .serializers import PaymentInitiateSerializer
 import logging
+from vendors.models import Vendor
 
 logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def generate_qr_code(request):
     """
     Generate a QR code for payment and register the session
     """
+    
     serializer = PaymentInitiateSerializer(data=request.data)
-
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # Extract validated data
-    validated_data = serializer.validated_data
-    session_id = validated_data['session_id']
-    amount = validated_data['amount']
-    vendor = validated_data['vendor']
+    validated_data = getattr(serializer, 'validated_data', {}) or {}
+    session_id = validated_data.get('session_id')
+    amount = validated_data.get('amount')
 
-    # Check if session already exists
-    existing_session = PaymentSession.objects.filter(session_id=session_id).first()
-    if existing_session:
+    # Use authenticated user as vendor
+    vendor_instance = request.user
+
+    if not isinstance(vendor_instance, Vendor):
+        return Response({"error": "Authenticated user is not a vendor"}, status=400)
+
+    # Prevent duplicate session IDs
+    if PaymentSession.objects.filter(session_id=session_id).exists():
         return Response(
-            {"error": f"Session ID '{session_id}' already exists. Please use a unique session ID."},
+            {"error": f"Session ID '{session_id}' already exists."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Create payment session
     payment_session = PaymentSession.objects.create(
         session_id=session_id,
         amount=amount,
-        vendor=vendor,
+        vendor=vendor_instance,
         status='pending'
     )
 
-    # Create QR code payload
+    # Create QR code payload (ensure amount is not None and convertible to float)
+    try:
+        amount_float = float(amount) if amount is not None else None
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid amount provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if amount_float is None:
+        return Response({"error": "Missing amount"}, status=status.HTTP_400_BAD_REQUEST)
+
     payload = {
         "session_id": session_id,
-        "amount": float(amount),
-        "vendor": vendor
+        "amount": amount_float,
+        "vendor": vendor_instance.email
     }
     qr_data = json.dumps(payload)
 
-    # Generate QR code
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
+    qr = qrcode.QRCode(version=1, error_correction=ERROR_CORRECT_L, box_size=10, border=4)
     qr.add_data(qr_data)
     qr.make(fit=True)
 
-    # Create image
     img = qr.make_image(fill_color="black", back_color="white")
-
-    # Convert to base64
     buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
+    img.save(buffered, "PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
     logger.info(f"QR code generated for session: {session_id}")
@@ -81,43 +86,43 @@ def generate_qr_code(request):
     return Response({
         "session_id": session_id,
         "amount": str(amount),
-        "vendor": vendor,
+        "vendor": vendor_instance.email,
         "qr_code": f"data:image/png;base64,{img_str}",
         "message": "QR code generated and session registered successfully"
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def initiate_payment(request):
     """
     Initiate a payment transaction with Paystack
     """
     serializer = PaymentInitiateSerializer(data=request.data)
-
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # Extract validated data
-    validated_data = serializer.validated_data
-    session_id = validated_data['session_id']
-    amount = validated_data['amount']
-    vendor = validated_data['vendor']
+    validated_data = getattr(serializer, 'validated_data', {}) or {}
+    session_id = validated_data.get('session_id')
+    amount = validated_data.get('amount')
 
-    # Check if session already exists
-    existing_session = PaymentSession.objects.filter(session_id=session_id).first()
-    if existing_session and existing_session.status == 'paid':
+    # Use authenticated user as vendor
+    vendor_instance = request.user
+    if not isinstance(vendor_instance, Vendor):
+        return Response({"error": "Authenticated user is not a vendor"}, status=400)
+
+    # Prevent duplicate paid sessions
+    existing_session = PaymentSession.objects.filter(session_id=session_id, status='paid').first()
+    if existing_session:
         return Response(
             {"error": "This payment session has already been completed"},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Create or update payment session
-    payment_session, created = PaymentSession.objects.update_or_create(
+    payment_session = PaymentSession.objects.create(
         session_id=session_id,
-        defaults={
-            'amount': amount,
-            'vendor': vendor,
-            'status': 'pending'
-        }
+        amount=amount,
+        vendor=request.user,  # ✅ assign Vendor instance
+        status='pending'
     )
 
     # Initialize Paystack transaction
@@ -127,14 +132,25 @@ def initiate_payment(request):
         "Content-Type": "application/json"
     }
 
+    # Validate and convert amount to float, then to kobo/cents for Paystack
+    if amount is None:
+        return Response({"error": "Missing amount"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        amount_float = float(amount)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid amount provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+    amount_cents = int(amount_float * 100)  # convert to kobo/cents
+
     payload = {
-        "email": "test@example.com",
-        "amount": int(amount * 100),  # Convert to kobo/cents
+        "email": vendor_instance.email,
+        "amount": amount_cents,
         "reference": f"{session_id}_{payment_session.id}",
         "callback_url": f"{settings.FRONTEND_URL}/payment-callback",
         "metadata": {
             "session_id": session_id,
-            "vendor": vendor,
+            "vendor": vendor_instance.email,
             "payment_session_id": str(payment_session.id)
         }
     }
@@ -144,7 +160,6 @@ def initiate_payment(request):
         response_data = response.json()
 
         if response.status_code == 200 and response_data.get('status'):
-            # Save Paystack reference
             payment_session.paystack_reference = response_data['data']['reference']
             payment_session.save()
 
