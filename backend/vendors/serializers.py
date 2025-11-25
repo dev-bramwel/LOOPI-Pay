@@ -1,5 +1,11 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.db import models
+from .models import Vendor, Transaction
+
+from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
+from django.db import models
 from .models import Vendor, Transaction
 
 class VendorRegistrationSerializer(serializers.ModelSerializer):

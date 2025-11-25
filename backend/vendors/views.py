@@ -1,6 +1,7 @@
 import uuid
 import secrets
 import qrcode
+from qrcode.constants import ERROR_CORRECT_L
 import io
 import base64
 import json
@@ -14,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Vendor, Transaction
+from django.contrib.auth import authenticate
 from .serializers import (
     VendorRegistrationSerializer,
     VendorSerializer,
@@ -37,10 +39,16 @@ def register_vendor(request):
 
     if serializer.is_valid():
         vendor = serializer.save()
+        # If serializer.save() returned a list/tuple (e.g., [vendor]), unwrap it safely
+        if isinstance(vendor, (list, tuple)):
+            if vendor:
+                vendor = vendor[0]
+            else:
+                return Response({'error': 'Failed to create vendor'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # Generate verification token
         verification_token = secrets.token_urlsafe(32)
-        vendor.verification_token = verification_token
+        setattr(vendor, 'verification_token', verification_token)
         vendor.save()
 
         # TODO: Send verification email
@@ -80,21 +88,25 @@ def login_vendor(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    try:
-        vendor = Vendor.objects.get(email=email)
-    except Vendor.DoesNotExist:
+    # Prefer using Django's authenticate (respects auth backends)
+    # Call authenticate without passing the request object to avoid backend-specific issues
+    user = authenticate(email=email, password=password)
+    if user is None:
+        # try authenticating with email keyword in case backend expects it
+        try:
+            user = authenticate(request, email=email, password=password)
+        except Exception:
+            user = None
+
+    if user is None:
         return Response(
             {'error': 'Invalid credentials'},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    if not vendor.check_password(password):
-        return Response(
-            {'error': 'Invalid credentials'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+    vendor = user
 
-    if not vendor.is_verified:
+    if not getattr(vendor, 'is_verified', False):
         return Response(
             {'error': 'Please verify your email before logging in'},
             status=status.HTTP_403_FORBIDDEN
@@ -143,12 +155,15 @@ def initiate_transaction(request):
     Vendor initiates a new transaction and generates QR code
     """
     serializer = InitiateTransactionSerializer(data=request.data)
-
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # raise_exception=True will cause DRF to return a 400 with errors automatically
+    serializer.is_valid(raise_exception=True)
 
     vendor = request.user
-    amount = serializer.validated_data['amount']
+    _validated = getattr(serializer, 'validated_data', None)
+    validated = _validated if isinstance(_validated, dict) else {}
+    amount = validated.get('amount')
+    if amount is None:
+        return Response({'error': 'Amount is required'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Generate unique session_id using timestamp and vendor email
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -178,19 +193,19 @@ def initiate_transaction(request):
         "vendor": vendor.email
     }
     qr_data = json.dumps(payload)
-
     qr = qrcode.QRCode(
         version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        error_correction=ERROR_CORRECT_L,
         box_size=10,
         border=4,
     )
+    
     qr.add_data(qr_data)
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
     buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
+    img.save(buffered, "PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
     logger.info(f"Transaction initiated by {vendor.email}: {session_id}")
