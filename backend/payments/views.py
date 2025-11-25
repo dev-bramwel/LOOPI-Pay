@@ -118,12 +118,9 @@ def initiate_payment(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    payment_session = PaymentSession.objects.create(
-        session_id=session_id,
-        amount=amount,
-        vendor=request.user,  # ✅ assign Vendor instance
-        status='pending'
-    )
+    payment_session = PaymentSession.objects.filter(session_id=session_id).first()
+    if not payment_session:
+        return Response({"error": "Session not registered"}, status=400)
 
     # Initialize Paystack transaction
     paystack_url = "https://api.paystack.co/transaction/initialize"
@@ -147,7 +144,7 @@ def initiate_payment(request):
         "email": vendor_instance.email,
         "amount": amount_cents,
         "reference": f"{session_id}_{payment_session.id}",
-        "callback_url": f"{settings.FRONTEND_URL}/payment-callback",
+        "callback_url": f"{settings.FRONTEND_URL}/PaymentCallback.jsx",
         "metadata": {
             "session_id": session_id,
             "vendor": vendor_instance.email,
@@ -165,7 +162,8 @@ def initiate_payment(request):
 
             return Response({
                 "reference": response_data['data']['reference'],
-                "checkout_url": response_data['data']['authorization_url']
+                "checkout_url": response_data['data']['authorization_url'],
+                "session_id": payment_session.session_id
             }, status=status.HTTP_200_OK)
         else:
             logger.error(f"Paystack error: {response_data}")
@@ -187,6 +185,9 @@ def paystack_webhook(request):
     """
     Handle Paystack webhook events
     """
+    # log incoming requests
+    logger.info("Webhook received. Headers=%s Body=%s", dict(request.headers), request.body.decode())
+
     # Verify webhook signature
     paystack_signature = request.META.get('HTTP_X_PAYSTACK_SIGNATURE')
 
@@ -231,14 +232,14 @@ def paystack_webhook(request):
 
     # Update payment status based on event type
     if event_type == 'charge.success':
-        payment_session.status = 'paid'
+        payment_session.status = 'PaymentSession.STATUS_COMPLETED'
         logger.info(f"Payment successful for session: {payment_session.session_id}")
 
         # Also update vendor transaction if exists
         from vendors.models import Transaction
         try:
-            transaction = Transaction.objects.get(session_id=payment_session.session_id)
-            transaction.status = 'paid'
+            transaction = Transaction.objects.get(session_id=payment_session.id)
+            transaction.status = 'completed'
             transaction.paid_at = timezone.now()
             transaction.paystack_reference = reference
             transaction.save()
