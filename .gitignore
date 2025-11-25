@@ -115,3 +115,5 @@ test-output/
 
 # Misc
 coverage_html_report/
+
+db.sqlite3
