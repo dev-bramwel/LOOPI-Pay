@@ -84,9 +84,9 @@ def login_vendor(request):
 
     from django.contrib.auth import get_user_model
     user = get_user_model()
-    print("DEBUG: Users in DB")
-    for u in User.objects.all():
-        print(u.email, u.username)
+    #print("DEBUG: Users in DB")
+    #for u in User.objects.all():
+    #    print(u.email, u.username)
 
 
     user = authenticate(request, email=email, password=password)
