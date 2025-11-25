@@ -16,7 +16,7 @@ reg_payload = {
     "phone": "+1234567890"
 }
 
-login_payload = {"email": "vendor@test.com", "password": "SecurePass123!"}
+login_payload = {"email": reg_payload["email"], "password": "SecurePass123!"}
 
 def do_post(url, payload):
     try:

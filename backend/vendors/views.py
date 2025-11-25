@@ -6,7 +6,8 @@ import io
 import base64
 import json
 from datetime import datetime
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
+from django.shortcuts import get_object_or_404
 from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from rest_framework import status, generics, permissions
@@ -15,7 +16,12 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Vendor, Transaction
-from django.contrib.auth import authenticate
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.conf import settings
 from .serializers import (
     VendorRegistrationSerializer,
     VendorSerializer,
@@ -32,46 +38,69 @@ User = get_user_model()
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_vendor(request):
-    """
-    Register a new vendor
-    """
     serializer = VendorRegistrationSerializer(data=request.data)
 
-    if serializer.is_valid():
-        vendor = serializer.save()
-        # If serializer.save() returned a list/tuple (e.g., [vendor]), unwrap it safely
-        if isinstance(vendor, (list, tuple)):
-            if vendor:
-                vendor = vendor[0]
-            else:
-                return Response({'error': 'Failed to create vendor'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate verification token
-        verification_token = secrets.token_urlsafe(32)
-        setattr(vendor, 'verification_token', verification_token)
-        vendor.save()
+    saved = serializer.save()
 
-        # TODO: Send verification email
-        logger.info(f"Vendor registered: {vendor.email}")
-        logger.info(f"Verification token: {verification_token}")
+    # Ensure we have a Vendor instance (serializer may return an instance or a list)
+    if isinstance(saved, list):
+        vendor = saved[0] if saved else None
+    else:
+        vendor = saved
 
-        # For now, auto-verify in development
-        vendor.is_verified = True
-        vendor.save()
+    if vendor is None:
+        return Response({'error': 'Failed to create vendor'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Generate tokens
-        refresh = RefreshToken.for_user(vendor)
+    # Create verification token
+    verification_token = secrets.token_urlsafe(32)
+    vendor.verification_token = verification_token
+    vendor.is_verified = False
+    vendor.save()
 
-        return Response({
-            'message': 'Vendor registered successfully',
-            'vendor': VendorSerializer(vendor).data,
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            }
-        }, status=status.HTTP_201_CREATED)
+    # Build verification URL (include uid so verify endpoint can locate the vendor)
+    base_url = request.build_absolute_uri('/')[:-1]
+    verification_uid = urlsafe_base64_encode(force_bytes(vendor.pk))
+    verification_url = f"{base_url}/api/vendors/verify-email/?token={verification_token}&uid={verification_uid}"
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # Send verification email
+    subject = "Verify your vendor account"
+    message = f"Click the link to verify your account: {verification_url}"
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [vendor.email])
+
+    # issue tokens for login AFTER verification
+    refresh = RefreshToken.for_user(vendor)
+
+    return Response({
+        "message": "Vendor registered successfully. Please check your email to verify your account.",
+        "vendor": VendorSerializer(vendor).data,
+        "tokens": {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        }
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def verify_email(request):
+    token = request.GET.get('token')
+
+    if not token:
+        return Response({"error": "Token missing"}, status=400)
+
+    try:
+        vendor = Vendor.objects.get(verification_token=token)
+    except Vendor.DoesNotExist:
+        return Response({"error": "Invalid token"}, status=400)
+
+    vendor.is_verified = True
+    vendor.verification_token = None
+    vendor.save()
+
+    return Response({"message": "Email verified successfully!"})
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -82,14 +111,8 @@ def login_vendor(request):
     if not email or not password:
         return Response({'error': 'Email and password are required'}, status=400)
 
-    from django.contrib.auth import get_user_model
-    user = get_user_model()
-    #print("DEBUG: Users in DB")
-    #for u in User.objects.all():
-    #    print(u.email, u.username)
-
-
-    user = authenticate(request, email=email, password=password)
+    # authenticate using the project's USERNAME_FIELD (your Vendor model uses email)
+    user = authenticate(username=email, password=password)
 
     if user is None:
         return Response({'error': 'Invalid credentials'}, status=401)
@@ -97,9 +120,7 @@ def login_vendor(request):
     if not getattr(user, 'is_verified', False):
         return Response({'error': 'Please verify your email'}, status=403)
 
-    from rest_framework_simplejwt.tokens import RefreshToken
     refresh = RefreshToken.for_user(user)
-
     return Response({
         'message': 'Login successful',
         'vendor': VendorSerializer(user).data,
@@ -140,13 +161,11 @@ def initiate_transaction(request):
     Vendor initiates a new transaction and generates QR code
     """
     serializer = InitiateTransactionSerializer(data=request.data)
-    # raise_exception=True will cause DRF to return a 400 with errors automatically
     serializer.is_valid(raise_exception=True)
 
     vendor = request.user
-    _validated = getattr(serializer, 'validated_data', None)
-    validated = _validated if isinstance(_validated, dict) else {}
-    amount = validated.get('amount')
+    validated_data = getattr(serializer, 'validated_data', {}) or {}
+    amount = validated_data.get('amount')
     if amount is None:
         return Response({'error': 'Amount is required'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -171,7 +190,7 @@ def initiate_transaction(request):
         status='pending'
     )
 
-    # Generate QR code
+    # Generate QR code payload
     payload = {
         "session_id": session_id,
         "amount": float(amount),
@@ -184,7 +203,7 @@ def initiate_transaction(request):
         box_size=10,
         border=4,
     )
-    
+
     qr.add_data(qr_data)
     qr.make(fit=True)
 
