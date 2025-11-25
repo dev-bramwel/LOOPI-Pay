@@ -118,13 +118,23 @@ AUTHENTICATION_BACKENDS = [
 
 
 # Email Settings (for account verification)
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = os.getenv("EMAIL_HOST")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
+# Allow overriding via environment variable `EMAIL_BACKEND`.
+# If not set, default to console backend in DEBUG and SMTP otherwise.
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
+if not EMAIL_BACKEND:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend'
+
+# If using SMTP backend, read SMTP settings from environment variables
+if 'smtp' in EMAIL_BACKEND:
+    EMAIL_HOST = os.getenv('EMAIL_HOST')
+    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Loopi <loopiswift@gmail.com>')
+else:
+    # Console or other non-SMTP backends
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Loopi <loopiswift@gmail.com>')
 
 # Paystack Settings
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')

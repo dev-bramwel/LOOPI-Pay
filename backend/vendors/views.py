@@ -70,16 +70,10 @@ def register_vendor(request):
     message = f"Click the link to verify your account: {verification_url}"
     send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [vendor.email])
 
-    # issue tokens for login AFTER verification
-    refresh = RefreshToken.for_user(vendor)
-
+    # Do NOT issue tokens at registration time — require email verification first.
     return Response({
         "message": "Vendor registered successfully. Please check your email to verify your account.",
-        "vendor": VendorSerializer(vendor).data,
-        "tokens": {
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-        }
+        "vendor": VendorSerializer(vendor).data
     }, status=status.HTTP_201_CREATED)
 
 
@@ -100,7 +94,17 @@ def verify_email(request):
     vendor.verification_token = None
     vendor.save()
 
-    return Response({"message": "Email verified successfully!"})
+    # Issue tokens on successful verification so the user can be logged in automatically
+    refresh = RefreshToken.for_user(vendor)
+
+    return Response({
+        "message": "Email verified successfully!",
+        "vendor": VendorSerializer(vendor).data,
+        "tokens": {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        }
+    })
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

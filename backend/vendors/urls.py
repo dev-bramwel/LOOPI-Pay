@@ -19,4 +19,6 @@ urlpatterns = [
 
     # Dashboard
     path('dashboard/stats/', views.vendor_dashboard_stats, name='dashboard_stats'),
+    # Email verification
+    path('verify-email/', views.verify_email, name='verify_email'),
 ]
