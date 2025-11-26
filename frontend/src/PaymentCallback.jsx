@@ -12,26 +12,61 @@ function PaymentCallback() {
     const reference = searchParams.get("reference");
 
     if (reference) {
-      // Extract session_id from reference (format: session_id_uuid)
-      const sessionId = reference.split("_")[0];
+      // First try to resolve session_id from a mapping stored before redirect.
+      // PayRedirect stores `pay_ref:<reference> => session_id` in localStorage.
+      let sessionId = null;
+      try {
+        sessionId = localStorage.getItem(`pay_ref:${reference}`);
+      } catch (e) {
+        // ignore storage access errors
+      }
+
+      // Fallback: try to parse the session_id out of the reference string.
+      // Reference formats may be:
+      //  - {session_id}_{payment_session.id}
+      //  - {session_id}_{payment_session.id}_{uuid}
+      // We remove the trailing `_numericId` and optional `_uuid` suffix.
+      if (!sessionId) {
+        const m = reference.match(/^(.+?)_\d+(?:_[0-9a-fA-F-]+)?$/);
+        if (m) {
+          sessionId = m[1];
+        }
+      }
+
+      if (!sessionId) {
+        setStatus("error");
+        setMessage("Could not determine payment session from reference.");
+        return;
+      }
 
       // Poll for payment status
       const checkStatus = async () => {
         try {
           const response = await fetch(
-            `${API_URL}/api/payments/status/${sessionId}/`
+            `${API_URL}/api/payments/status/${sessionId}/?reference=${encodeURIComponent(
+              reference
+            )}`
           );
           const data = await response.json();
 
-          if (data.status === "paid") {
+          // Normalize possible backend statuses (e.g., 'paid' or 'completed')
+          const s = (data.status || "").toString().toLowerCase();
+
+          if (s === "paid" || s === "completed") {
             setStatus("success");
-            setMessage("Payment successful! 🎉");
-          } else if (data.status === "failed") {
+            setMessage(
+              "Payment complete — thank you! A receipt will be sent shortly."
+            );
+          } else if (s === "failed") {
             setStatus("failed");
-            setMessage("Payment failed. Please try again.");
+            setMessage("Payment failed. Please try again or contact support.");
+          } else if (s === "pending" || s === "processing" || s === "open") {
+            // Still pending, check again after a longer interval to reduce noise
+            setTimeout(checkStatus, 6000);
           } else {
-            // Still pending, check again
-            setTimeout(checkStatus, 2000);
+            // Unknown state: surface an error
+            setStatus("error");
+            setMessage("Error verifying payment. Please contact support.");
           }
         } catch (err) {
           setStatus("error");

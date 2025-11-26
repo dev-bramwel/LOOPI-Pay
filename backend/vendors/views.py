@@ -194,13 +194,9 @@ def initiate_transaction(request):
         status='pending'
     )
 
-    # Generate QR code payload
-    payload = {
-        "session_id": session_id,
-        "amount": float(amount),
-        "vendor": vendor.email
-    }
-    qr_data = json.dumps(payload)
+    # Generate QR code payload that redirects to frontend /pay route
+    frontend_base = getattr(settings, 'FRONTEND_URL', None) or request.build_absolute_uri('/').rstrip('/')
+    redirect_url = f"{frontend_base}/pay?session_id={session_id}"
     qr = qrcode.QRCode(
         version=1,
         error_correction=ERROR_CORRECT_L,
@@ -208,7 +204,7 @@ def initiate_transaction(request):
         border=4,
     )
 
-    qr.add_data(qr_data)
+    qr.add_data(redirect_url)
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
@@ -223,6 +219,7 @@ def initiate_transaction(request):
         'qr_code': f"data:image/png;base64,{img_str}",
         'session_id': session_id,
         'amount': str(amount),
+        'created_at': payment_session.created_at.isoformat(),
         'message': 'Transaction initiated successfully'
     }, status=status.HTTP_201_CREATED)
 

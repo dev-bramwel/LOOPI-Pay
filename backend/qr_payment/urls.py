@@ -22,6 +22,7 @@ from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from .views import home
+from payments import views as payments_views
 
 
 schema_view = get_schema_view(
@@ -37,6 +38,8 @@ schema_view = get_schema_view(
 urlpatterns = [
     path("admin/", admin.site.urls),
     path('api/payments/', include('payments.urls')),
+    # Accept older/alternate webhook path used in some Paystack dashboard configs
+    path('api/paystack/webhook', payments_views.paystack_webhook),
     path('api/vendors/', include('vendors.urls')),
 
     # Landing
