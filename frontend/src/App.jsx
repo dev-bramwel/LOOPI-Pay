@@ -5,10 +5,13 @@ import {
   Navigate,
   useNavigate,
 } from "react-router-dom";
+import Header from "./components/Header";
 import VendorRegister from "./components/VendorRegister";
 import VendorLogin from "./components/VendorLogin";
 import VendorDashboard from "./components/VendorDashboard";
 import VerifyEmail from "./components/VerifyEmail";
+import VendorAccount from "./components/VendorAccount";
+import Footer from "./components/Footer";
 import PayRedirect from "./PayRedirect";
 import PaymentCallback from "./PaymentCallback";
 
@@ -27,6 +30,7 @@ function AppWrapper() {
       <Route path="/" element={<Navigate to="/vendor/register" replace />} />
       <Route path="/vendor/register" element={<VendorRegister />} />
       <Route path="/vendor/login" element={<VendorLogin />} />
+      <Route path="/vendor/account" element={<VendorAccount />} />
       <Route
         path="/vendor/verify"
         element={<VerifyEmail setIsVendor={() => {}} />}
@@ -44,8 +48,16 @@ function AppWrapper() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppWrapper />
+      <div className="app">
+        <div className="container">
+          <Header />
+
+          <main>
+            <AppWrapper />
+          </main>
+          <Footer />
+        </div>
+      </div>
     </BrowserRouter>
   );
 }
-import { useState, useEffect } from "react";

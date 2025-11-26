@@ -111,28 +111,35 @@ function PaymentCallback() {
   }, [searchParams]);
 
   return (
-    <>
+    <div
+      className="card"
+      style={{ maxWidth: 720, margin: "0 auto", textAlign: "center" }}
+    >
       <h2>Payment Status</h2>
+
       <div
-        className={`alert alert-${
+        className={`alert ${
           status === "success"
-            ? "success"
+            ? "alert-success"
             : status === "failed"
-            ? "error"
-            : "info"
+            ? "alert-error"
+            : "alert-info"
         }`}
       >
         {message}
       </div>
+
       {status !== "processing" && (
-        <button
-          onClick={() => navigate("/vendor/dashboard")}
-          className="mt-4 inline-flex items-center gap-2 rounded-md border border-transparent bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          Return Home
-        </button>
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={() => navigate("/vendor/dashboard")}
+            className="btn btn-primary"
+          >
+            Return Home
+          </button>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 

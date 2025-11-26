@@ -56,7 +56,10 @@ function VerifyEmail({ setIsVendor }) {
   };
 
   return (
-    <div className="verify-email">
+    <div
+      className="card"
+      style={{ maxWidth: 640, margin: "0 auto", textAlign: "center" }}
+    >
       <h1>Email Verification</h1>
 
       {status === "verifying" && <p>{message}</p>}
@@ -72,10 +75,17 @@ function VerifyEmail({ setIsVendor }) {
       {status === "error" && (
         <div>
           <h2>❌ Verification Failed</h2>
-          <p>{error}</p>
+          <div className="alert alert-error" style={{ margin: 12 }}>
+            {error}
+          </div>
           <p>
-            <Link to="/vendor/register">Register Again</Link> |{" "}
-            <Link to="/vendor/login">Go to Login</Link>
+            <Link to="/vendor/register" className="tab">
+              Register Again
+            </Link>{" "}
+            |{" "}
+            <Link to="/vendor/login" className="tab">
+              Go to Login
+            </Link>
           </p>
         </div>
       )}

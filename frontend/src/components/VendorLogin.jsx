@@ -46,10 +46,17 @@ function VendorLogin() {
   };
 
   return (
-    <div className="auth-container">
+    <div className="card" style={{ maxWidth: 520, margin: "0 auto" }}>
       <h1>Vendor Login</h1>
-      <form onSubmit={handleSubmit} style={{ maxWidth: 480 }}>
-        <div style={{ marginBottom: 8 }}>
+
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div className="form-group">
           <label>Email</label>
           <input
             name="email"
@@ -58,7 +65,8 @@ function VendorLogin() {
             required
           />
         </div>
-        <div style={{ marginBottom: 8 }}>
+
+        <div className="form-group">
           <label>Password</label>
           <input
             name="password"
@@ -68,13 +76,15 @@ function VendorLogin() {
             required
           />
         </div>
-        {error && <div style={{ color: "red", marginBottom: 8 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="submit" disabled={loading}>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+          <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? "Logging in..." : "Login"}
           </button>
           <Link to="/vendor/register">
-            <button type="button">Register</button>
+            <button type="button" className="btn btn-secondary">
+              Register
+            </button>
           </Link>
         </div>
       </form>

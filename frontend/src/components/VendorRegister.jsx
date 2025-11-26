@@ -62,10 +62,17 @@ function VendorRegister() {
   };
 
   return (
-    <div className="auth-container">
+    <div className="card" style={{ maxWidth: 560, margin: "0 auto" }}>
       <h1>Vendor Registration</h1>
-      <form onSubmit={handleSubmit} style={{ maxWidth: 480 }}>
-        <div style={{ marginBottom: 8 }}>
+
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ maxWidth: 520, margin: "0 auto" }}>
+        <div className="form-group">
           <label>Email</label>
           <input
             name="email"
@@ -74,7 +81,8 @@ function VendorRegister() {
             required
           />
         </div>
-        <div style={{ marginBottom: 8 }}>
+
+        <div className="form-group">
           <label>Username</label>
           <input
             name="username"
@@ -83,7 +91,8 @@ function VendorRegister() {
             required
           />
         </div>
-        <div style={{ marginBottom: 8 }}>
+
+        <div className="form-group">
           <label>Business Name</label>
           <input
             name="business_name"
@@ -91,11 +100,13 @@ function VendorRegister() {
             onChange={handleChange}
           />
         </div>
-        <div style={{ marginBottom: 8 }}>
+
+        <div className="form-group">
           <label>Phone</label>
           <input name="phone" value={form.phone} onChange={handleChange} />
         </div>
-        <div style={{ marginBottom: 8 }}>
+
+        <div className="form-group">
           <label>Password</label>
           <input
             name="password"
@@ -105,7 +116,8 @@ function VendorRegister() {
             required
           />
         </div>
-        <div style={{ marginBottom: 12 }}>
+
+        <div className="form-group">
           <label>Confirm Password</label>
           <input
             name="password2"
@@ -115,13 +127,15 @@ function VendorRegister() {
             required
           />
         </div>
-        {error && <div style={{ color: "red", marginBottom: 8 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="submit" disabled={loading}>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+          <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? "Registering..." : "Register"}
           </button>
           <Link to="/vendor/login">
-            <button type="button">Login</button>
+            <button type="button" className="btn btn-secondary">
+              Login
+            </button>
           </Link>
         </div>
       </form>

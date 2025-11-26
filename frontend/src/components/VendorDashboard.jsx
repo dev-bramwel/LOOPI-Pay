@@ -491,37 +491,35 @@ function VendorDashboard({ handleLogout }) {
 
   return (
     <div className="dashboard">
-      {toast.visible && (
+      <div className="toast-container" aria-live="polite">
         <div
-          className={`toast toast-${toast.type}`}
-          style={{
-            position: "fixed",
-            right: 20,
-            top: 20,
-            zIndex: 2000,
-            padding: "10px 16px",
-            borderRadius: 6,
-            background:
-              toast.type === "success"
-                ? "#D1FAE5"
-                : toast.type === "error"
-                ? "#FEE2E2"
-                : "#E6F0FF",
-            color: "#0F172A",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-          }}
+          className={`toast ${toast.visible ? "show" : ""} ${
+            toast.type === "success"
+              ? "toast-success"
+              : toast.type === "error"
+              ? "toast-error"
+              : ""
+          }`}
         >
           {toast.message}
         </div>
-      )}
+      </div>
       <div className="dashboard-header">
         <div className="header-content">
           <h1>Vendor Dashboard</h1>
           <p>Welcome, {vendor.business_name || vendor.email}</p>
         </div>
-        <button className="btn btn-secondary" onClick={handleLogout}>
-          Logout
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate("/vendor/account")}
+          >
+            Account
+          </button>
+          <button className="btn btn-secondary" onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
       </div>
 
       <div className="dashboard-tabs">
@@ -552,13 +550,13 @@ function VendorDashboard({ handleLogout }) {
               <h3>Total Transactions</h3>
               <p className="stat-value">{stats.total_transactions}</p>
             </div>
-              <div className="stat-card">
+            <div className="stat-card">
               <h3>Total Revenue</h3>
               <p className="stat-value">
                 KES {stats.total_revenue.toLocaleString()}
               </p>
             </div>
-              <div className="stat-card">
+            <div className="stat-card">
               <h3>Today's Revenue</h3>
               <p className="stat-value">
                 KES {stats.today_revenue.toLocaleString()}
@@ -597,7 +595,8 @@ function VendorDashboard({ handleLogout }) {
                         <tr key={transaction.id}>
                           <td>{transaction.session_id}</td>
                           <td>
-                            KES {parseFloat(transaction.amount).toLocaleString()}
+                            KES{" "}
+                            {parseFloat(transaction.amount).toLocaleString()}
                           </td>
                           <td>
                             <span
@@ -659,8 +658,27 @@ function VendorDashboard({ handleLogout }) {
               <div className="alert alert-success">
                 ✅ QR Code Generated Successfully!
               </div>
-              <div className="qr-display">
-                <img src={generatedQR.qr_code} alt="Payment QR Code" />
+              <div className="qr-display-wrap">
+                <div className="qr-display">
+                  <img src={generatedQR.qr_code} alt="Payment QR Code" />
+                </div>
+                <div
+                  className={`success-check ${
+                    generatedQR.status === "completed" ? "show" : ""
+                  }`}
+                  aria-hidden
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </div>
               </div>
               <div className="qr-details">
                 <div className="detail-row">
@@ -789,41 +807,16 @@ function VendorDashboard({ handleLogout }) {
                 <div className="alert alert-error">{scanError}</div>
               )}
               {scanning && (
-                <div
-                  className="scan-modal"
-                  style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
-                    background: "rgba(0,0,0,0.6)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 1000,
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#fff",
-                      padding: 16,
-                      borderRadius: 8,
-                      maxWidth: 520,
-                      width: "95%",
-                      textAlign: "center",
-                    }}
-                  >
+                <div className="scan-modal-overlay">
+                  <div className="scan-modal-card">
                     <video
                       ref={videoRef}
-                      style={{ width: "100%", maxWidth: 480, borderRadius: 6 }}
+                      className="scan-video"
                       muted
                       playsInline
                     />
-                    <div style={{ marginTop: 8 }} className="scan-hint">
-                      Point camera at the QR code
-                    </div>
-                    <div style={{ marginTop: 12 }}>
+                    <div className="scan-hint">Point camera at the QR code</div>
+                    <div className="scan-actions">
                       <button className="btn btn-secondary" onClick={stopScan}>
                         Stop
                       </button>
@@ -839,6 +832,15 @@ function VendorDashboard({ handleLogout }) {
       {activeTab === "transactions" && (
         <div className="dashboard-content">
           <h2>All Transactions</h2>
+          {/* Line chart for completed amounts by day */}
+          {transactions && transactions.length > 0 && (
+            <div className="chart-container">
+              <h3 className="chart-title">
+                Completed Payments (by day). Watch your business grow!
+              </h3>
+              <LineChart transactions={transactions} />
+            </div>
+          )}
           {transactions.length === 0 ? (
             <div className="empty-state">
               <p>No transactions yet. Generate a QR code to get started!</p>
@@ -892,3 +894,168 @@ function VendorDashboard({ handleLogout }) {
 }
 
 export default VendorDashboard;
+
+// Simple inline LineChart component (SVG) — no external deps
+function LineChart({ transactions }) {
+  // Group completed transactions by date (YYYY-MM-DD)
+  const completed = (transactions || []).filter((t) => {
+    const s = (t.status || "").toString().toLowerCase();
+    return s === "completed" || s === "paid" || s === "paid";
+  });
+
+  const groups = {};
+  completed.forEach((t) => {
+    const d = new Date(t.created_at || t.paid_at || t.createdAt || Date.now());
+    if (isNaN(d.getTime())) return;
+    const day = d.toISOString().slice(0, 10);
+    const amt = parseFloat(t.amount || 0) || 0;
+    groups[day] = (groups[day] || 0) + amt;
+  });
+
+  const dates = Object.keys(groups).sort();
+  if (dates.length === 0) {
+    return <div className="chart-empty">No completed payments yet</div>;
+  }
+
+  const values = dates.map((d) => groups[d]);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+
+  const w = 700;
+  const h = 160;
+  const pad = 24;
+
+  const points = values.map((v, i) => {
+    const x = pad + (i / Math.max(1, dates.length - 1)) * (w - pad * 2);
+    const y =
+      h - pad - ((v - min) / Math.max(1, max - min)) * (h - pad * 2 || 1);
+    return { x, y, v, d: dates[i] };
+  });
+
+  const pathD = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+    .join(" ");
+  const areaD = `${points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+    .join(" ")} L ${w - pad} ${h - pad} L ${pad} ${h - pad} Z`;
+
+  // tooltip state
+  const [tooltip, setTooltip] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    label: "",
+  });
+  const containerRef = useRef(null);
+
+  return (
+    <div
+      className="line-chart"
+      style={{ maxWidth: "100%", overflow: "hidden", position: "relative" }}
+      ref={containerRef}
+    >
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        preserveAspectRatio="xMidYMid meet"
+        width="100%"
+        height="160"
+      >
+        <defs>
+          <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(14,165,233,0.14)" />
+            <stop offset="100%" stopColor="rgba(16,185,129,0.02)" />
+          </linearGradient>
+        </defs>
+        {/* area */}
+        <path d={areaD} fill="url(#areaGrad)" stroke="none" />
+        {/* line */}
+        <path
+          d={pathD}
+          fill="none"
+          stroke="var(--brand-blue)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* points */}
+        {points.map((p, i) => (
+          <g key={p.d}>
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r={4}
+              fill="var(--brand-green)"
+              style={{ cursor: "pointer", transition: "r 120ms" }}
+              onMouseEnter={(e) => {
+                const rect = containerRef.current?.getBoundingClientRect();
+                const clientX =
+                  e.clientX || (e.nativeEvent && e.nativeEvent.clientX);
+                const clientY =
+                  e.clientY || (e.nativeEvent && e.nativeEvent.clientY);
+                const x = rect ? clientX - rect.left : p.x;
+                const y = rect ? clientY - rect.top : p.y;
+                setTooltip({
+                  visible: true,
+                  x,
+                  y,
+                  label: `${p.d}: KES ${p.v.toLocaleString()}`,
+                });
+              }}
+              onMouseMove={(e) => {
+                const rect = containerRef.current?.getBoundingClientRect();
+                const clientX =
+                  e.clientX || (e.nativeEvent && e.nativeEvent.clientX);
+                const clientY =
+                  e.clientY || (e.nativeEvent && e.nativeEvent.clientY);
+                const x = rect ? clientX - rect.left : p.x;
+                const y = rect ? clientY - rect.top : p.y;
+                setTooltip((t) => ({ ...t, x, y }));
+              }}
+              onMouseLeave={() =>
+                setTooltip({ visible: false, x: 0, y: 0, label: "" })
+              }
+            />
+          </g>
+        ))}
+        {/* x labels (sparse) */}
+        {points.map((p, i) => {
+          const show =
+            i === 0 ||
+            i === points.length - 1 ||
+            i % Math.ceil(Math.max(1, points.length / 4)) === 0;
+          return (
+            show && (
+              <text
+                key={p.d}
+                x={p.x}
+                y={h - 4}
+                fontSize={10}
+                textAnchor="middle"
+                fill="#334155"
+              >
+                {p.d.slice(5)}
+              </text>
+            )
+          );
+        })}
+      </svg>
+      <div className="chart-summary">
+        <div>
+          Total completed:{" "}
+          <strong>
+            KES {values.reduce((a, b) => a + b, 0).toLocaleString()}
+          </strong>
+        </div>
+      </div>
+      {/* Tooltip */}
+      {tooltip.visible && (
+        <div
+          className="chart-tooltip"
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          {tooltip.label}
+        </div>
+      )}
+    </div>
+  );
+}
