@@ -134,6 +134,13 @@ function VendorDashboard({ handleLogout }) {
   // no auto-cancel: we track elapsed and let backend decide
   const [canceling, setCanceling] = useState(false);
   const [autoCancelSent, setAutoCancelSent] = useState(false);
+  const clearTimersRef = useRef([]);
+
+  // schedule clearing of the generated QR from UI (for security)
+  const scheduleClearGeneratedQR = (delay = 3000) => {
+    const id = setTimeout(() => setGeneratedQR(null), delay);
+    clearTimersRef.current.push(id);
+  };
 
   useEffect(() => {
     let intervalId;
@@ -192,6 +199,8 @@ function VendorDashboard({ handleLogout }) {
                   );
                   fetchDashboardStats();
                   fetchTransactions();
+                  // clear the QR from the UI after a short delay for security
+                  scheduleClearGeneratedQR(2500);
                 }
               })
               .catch((e) => console.warn("Auto-cancel error", e));
@@ -387,6 +396,14 @@ function VendorDashboard({ handleLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // cleanup any scheduled timers when component unmounts
+  useEffect(() => {
+    return () => {
+      (clearTimersRef.current || []).forEach((id) => clearTimeout(id));
+      clearTimersRef.current = [];
+    };
+  }, []);
+
   const getStatusBadge = (status) => {
     const badges = {
       pending: "badge-warning",
@@ -406,6 +423,8 @@ function VendorDashboard({ handleLogout }) {
       // ensure UI is fresh
       fetchDashboardStats();
       fetchTransactions();
+      // clear the QR from the UI shortly after mount (security)
+      scheduleClearGeneratedQR(800);
       return;
     }
 
@@ -453,6 +472,8 @@ function VendorDashboard({ handleLogout }) {
               type: s === "completed" ? "success" : "error",
             });
             setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
+            // clear the QR from the UI after a short delay for security
+            scheduleClearGeneratedQR(3000);
           }
         }
 
@@ -769,6 +790,8 @@ function VendorDashboard({ handleLogout }) {
                           );
                           fetchDashboardStats();
                           fetchTransactions();
+                          // clear the QR from the UI after cancel for security
+                          scheduleClearGeneratedQR(2500);
                         }
                       } catch (e) {
                         console.warn("Cancel error", e);
