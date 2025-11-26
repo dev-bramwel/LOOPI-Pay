@@ -600,12 +600,16 @@ def payment_status(request, session_id):
             except Exception:
                 pass
 
-    return Response({
+    # Add a hint header to let clients stop polling immediately when session is final
+    resp = Response({
         "session_id": payment_session.session_id,
         "status": payment_session.status,
         "amount": str(payment_session.amount),
         "vendor": payment_session.vendor.email if payment_session.vendor else None
     })
+    if payment_session.status in (PaymentSession.STATUS_COMPLETED, PaymentSession.STATUS_FAILED):
+        resp['X-Payment-Final'] = '1'
+    return resp
 
 
 @api_view(['POST'])

@@ -350,8 +350,17 @@ function VendorDashboard({ handleLogout }) {
   useEffect(() => {
     if (!generatedQR) return;
 
+    // Do not start polling if session already final
+    if (generatedQR.status === "completed" || generatedQR.status === "failed") {
+      // ensure UI is fresh
+      fetchDashboardStats();
+      fetchTransactions();
+      return;
+    }
+
     let stopped = false;
     let intervalId = null;
+    const finalToastShownRef = { current: false };
 
     const pollStatus = async () => {
       try {
@@ -369,30 +378,36 @@ function VendorDashboard({ handleLogout }) {
         }
 
         const data = await response.json();
+        // respect backend hint header to stop polling immediately
+        const isFinal = response.headers.get("x-payment-final");
 
         // update generatedQR status if it changed
         if (data.status && data.status !== generatedQR.status) {
           setGeneratedQR((prev) => ({ ...prev, status: data.status }));
-          // show a toast when payment completes or fails
-          if (data.status === "completed") {
+          // show a toast when payment completes or fails, but only once per session
+          if (
+            (data.status === "completed" || data.status === "failed") &&
+            !finalToastShownRef.current
+          ) {
+            finalToastShownRef.current = true;
             setToast({
               visible: true,
-              message: "Payment completed ✅",
-              type: "success",
-            });
-            setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
-          } else if (data.status === "failed") {
-            setToast({
-              visible: true,
-              message: "Payment failed ❌",
-              type: "error",
+              message:
+                data.status === "completed"
+                  ? "Payment completed ✅"
+                  : "Payment failed ❌",
+              type: data.status === "completed" ? "success" : "error",
             });
             setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
           }
         }
 
-        // stop polling when final state reached
-        if (data.status === "completed" || data.status === "failed") {
+        // stop polling when final state reached (or backend hinted final)
+        if (
+          data.status === "completed" ||
+          data.status === "failed" ||
+          isFinal
+        ) {
           stopped = true;
           // refresh transactions and stats so UI reflects change
           fetchDashboardStats();

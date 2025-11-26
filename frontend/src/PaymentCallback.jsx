@@ -10,6 +10,7 @@ function PaymentCallback() {
 
   useEffect(() => {
     const reference = searchParams.get("reference");
+    let timeoutHandle = null;
 
     if (reference) {
       // First try to resolve session_id from a mapping stored before redirect.
@@ -29,6 +30,7 @@ function PaymentCallback() {
       if (!sessionId) {
         const m = reference.match(/^(.+?)_\d+(?:_[0-9a-fA-F-]+)?$/);
         if (m) {
+          const shownRef = { current: false };
           sessionId = m[1];
         }
       }
@@ -47,6 +49,8 @@ function PaymentCallback() {
               reference
             )}`
           );
+          // If server signals final state via header, stop further polling
+          const isFinal = response.headers.get("x-payment-final");
           const data = await response.json();
 
           // Normalize possible backend statuses (e.g., 'paid' or 'completed')
@@ -57,12 +61,22 @@ function PaymentCallback() {
             setMessage(
               "Payment complete — thank you! A receipt will be sent shortly."
             );
+            // No more polling
+            if (timeoutHandle) clearTimeout(timeoutHandle);
           } else if (s === "failed") {
             setStatus("failed");
             setMessage("Payment failed. Please try again or contact support.");
+            if (timeoutHandle) clearTimeout(timeoutHandle);
           } else if (s === "pending" || s === "processing" || s === "open") {
             // Still pending, check again after a longer interval to reduce noise
-            setTimeout(checkStatus, 6000);
+            // If backend sent final hint, stop polling immediately
+            if (isFinal) {
+              if (timeoutHandle) clearTimeout(timeoutHandle);
+              setStatus(s === "failed" ? "failed" : "error");
+              setMessage("Payment session closed.");
+              return;
+            }
+            timeoutHandle = setTimeout(checkStatus, 6000);
           } else {
             // Unknown state: surface an error
             setStatus("error");
@@ -75,6 +89,10 @@ function PaymentCallback() {
       };
 
       checkStatus();
+      // cleanup pending timeout
+      return () => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+      };
     } else {
       setStatus("error");
       setMessage("No payment reference found.");
