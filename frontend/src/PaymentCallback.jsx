@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 function PaymentCallback() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [status, setStatus] = useState("processing");
   const [message, setMessage] = useState("Verifying payment...");
-
+  const shownRef = useRef(false);
   useEffect(() => {
     const reference = searchParams.get("reference");
     let timeoutHandle = null;
@@ -30,7 +31,6 @@ function PaymentCallback() {
       if (!sessionId) {
         const m = reference.match(/^(.+?)_\d+(?:_[0-9a-fA-F-]+)?$/);
         if (m) {
-          const shownRef = { current: false };
           sessionId = m[1];
         }
       }
@@ -57,15 +57,26 @@ function PaymentCallback() {
           const s = (data.status || "").toString().toLowerCase();
 
           if (s === "paid" || s === "completed") {
-            setStatus("success");
-            setMessage(
-              "Payment complete — thank you! A receipt will be sent shortly."
-            );
+            if (!shownRef.current) {
+              shownRef.current = true;
+              setStatus("success");
+              setMessage(
+                "Payment complete — thank you! A receipt will be sent shortly."
+              );
+              // navigate back to vendor dashboard after brief pause
+              setTimeout(() => navigate("/vendor/dashboard"), 1500);
+            }
             // No more polling
             if (timeoutHandle) clearTimeout(timeoutHandle);
           } else if (s === "failed") {
-            setStatus("failed");
-            setMessage("Payment failed. Please try again or contact support.");
+            if (!shownRef.current) {
+              shownRef.current = true;
+              setStatus("failed");
+              setMessage(
+                "Payment failed. Please try again or contact support."
+              );
+              setTimeout(() => navigate("/vendor/dashboard"), 1500);
+            }
             if (timeoutHandle) clearTimeout(timeoutHandle);
           } else if (s === "pending" || s === "processing" || s === "open") {
             // Still pending, check again after a longer interval to reduce noise
@@ -115,8 +126,8 @@ function PaymentCallback() {
       </div>
       {status !== "processing" && (
         <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = "/")}
+          onClick={() => navigate("/vendor/dashboard")}
+          className="mt-4 inline-flex items-center gap-2 rounded-md border border-transparent bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
         >
           Return Home
         </button>

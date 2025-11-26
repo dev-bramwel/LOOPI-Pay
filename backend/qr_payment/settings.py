@@ -140,3 +140,8 @@ else:
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY')
 FRONTEND_URL = os.getenv('FRONTEND_URL')
+# Payment auto-fail: number of minutes after which a pending session is
+# automatically marked failed by the backend. Set to 0 to disable auto-fail
+# (useful during testing). Configure via environment variable
+# PAYMENT_AUTO_FAIL_MINUTES.
+PAYMENT_AUTO_FAIL_MINUTES = int(os.getenv('PAYMENT_AUTO_FAIL_MINUTES', '3'))

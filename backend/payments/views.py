@@ -568,10 +568,12 @@ def payment_status(request, session_id):
     if not payment_session:
         return Response({"error": "Payment session not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # Auto-fail sessions older than 1 minute that are still pending
-    if payment_session.status == PaymentSession.STATUS_PENDING:
+    # Auto-fail sessions older than configured minutes that are still pending.
+    # Set `PAYMENT_AUTO_FAIL_MINUTES=0` to disable this behavior for testing.
+    auto_fail_minutes = getattr(settings, 'PAYMENT_AUTO_FAIL_MINUTES', 0)
+    if payment_session.status == PaymentSession.STATUS_PENDING and auto_fail_minutes and auto_fail_minutes > 0:
         age = timezone.now() - payment_session.created_at
-        if age > timedelta(minutes=1):
+        if age > timedelta(minutes=auto_fail_minutes):
             # Mark session failed due to timeout and record the auto-fail
             meta = getattr(payment_session, 'metadata', None) or {}
             meta['auto_failed'] = True

@@ -121,7 +121,8 @@ function VendorDashboard({ handleLogout }) {
     window.open(url, "_blank");
   };
 
-  // Countdown and pending animation for generated QR
+  // Countdown (time remaining) since QR/session initiation and pending animation for generated QR
+  // 3 minutes = 180 seconds
   const [countdown, setCountdown] = useState(null);
   const [spinnerIndex, setSpinnerIndex] = useState(0);
   const spinnerChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -130,7 +131,9 @@ function VendorDashboard({ handleLogout }) {
     message: "",
     type: "info",
   });
-  const [cancelSent, setCancelSent] = useState(false);
+  // no auto-cancel: we track elapsed and let backend decide
+  const [canceling, setCanceling] = useState(false);
+  const [autoCancelSent, setAutoCancelSent] = useState(false);
 
   useEffect(() => {
     let intervalId;
@@ -142,52 +145,80 @@ function VendorDashboard({ handleLogout }) {
         generatedQR.created_at ||
         new Date().toISOString();
       const start = new Date(createdAt).getTime();
+
       const update = () => {
         const now = Date.now();
-        const elapsed = Math.floor((now - start) / 1000);
-        const remaining = Math.max(0, 60 - elapsed);
+        const elapsedSec = Math.floor((now - start) / 1000);
+        const remaining = Math.max(0, 180 - elapsedSec);
         setCountdown(remaining);
-        if (remaining <= 0) {
-          // local fallback; server will mark failed on next poll
+
+        // If the session is final, stop further updates
+        if (
+          generatedQR.status === "completed" ||
+          generatedQR.status === "failed"
+        ) {
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+          if (spinnerId) {
+            clearInterval(spinnerId);
+            spinnerId = null;
+          }
+        }
+
+        // If countdown expired and we haven't sent auto-cancel yet, mark failed and notify backend
+        if (remaining <= 0 && !autoCancelSent) {
+          setAutoCancelSent(true);
           setGeneratedQR((prev) => ({ ...prev, status: "failed" }));
-          // notify backend once that the payment was cancelled/auto-failed
           try {
-            if (!cancelSent && generatedQR && generatedQR.session_id) {
-              // fire-and-forget cancel request (authenticated)
-              fetch(`${API_URL}/api/payments/cancel/`, {
-                method: "POST",
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ session_id: generatedQR.session_id }),
+            fetch(`${API_URL}/api/payments/cancel/`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ session_id: generatedQR.session_id }),
+            })
+              .then((r) => {
+                if (!r.ok) {
+                  console.warn("Auto-cancel request failed", r.status);
+                } else {
+                  setToast({
+                    visible: true,
+                    message: "Session auto-cancelled",
+                    type: "info",
+                  });
+                  setTimeout(
+                    () => setToast((t) => ({ ...t, visible: false })),
+                    4000
+                  );
+                  fetchDashboardStats();
+                  fetchTransactions();
+                }
               })
-                .then((r) => {
-                  if (!r.ok) {
-                    console.warn("Cancel request failed", r.status);
-                  } else {
-                    setToast({
-                      visible: true,
-                      message: "Session cancelled",
-                      type: "info",
-                    });
-                    setTimeout(
-                      () => setToast((t) => ({ ...t, visible: false })),
-                      4000
-                    );
-                  }
-                })
-                .catch((e) => console.warn("Cancel request error", e));
-              setCancelSent(true);
-            }
+              .catch((e) => console.warn("Auto-cancel error", e));
           } catch (e) {
-            console.warn("Error sending cancel request", e);
+            console.warn("Error sending auto-cancel", e);
           }
         }
       };
-      update();
-      intervalId = setInterval(update, 1000);
 
-      spinnerId = setInterval(() => {
-        setSpinnerIndex((i) => (i + 1) % spinnerChars.length);
-      }, 120);
+      // If already final, set countdown once and don't start intervals
+      if (
+        generatedQR.status === "completed" ||
+        generatedQR.status === "failed"
+      ) {
+        const now = Date.now();
+        const elapsedSec = Math.floor((now - start) / 1000);
+        const remaining = Math.max(0, 180 - elapsedSec);
+        setCountdown(remaining);
+        setSpinnerIndex(0);
+      } else {
+        update();
+        intervalId = setInterval(update, 1000);
+
+        spinnerId = setInterval(() => {
+          setSpinnerIndex((i) => (i + 1) % spinnerChars.length);
+        }, 120);
+      }
     } else {
       setCountdown(null);
     }
@@ -230,13 +261,33 @@ function VendorDashboard({ handleLogout }) {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
+      // Ensure the scanning modal/video element is rendered before attaching the stream.
       scanningRef.current = true;
       setScanning(true);
+
+      // Wait shortly for the video element to mount, up to a few ticks.
+      const waitForVideo = async () => {
+        for (let i = 0; i < 10; i++) {
+          if (videoRef.current) return;
+          // small delay
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      };
+
+      await waitForVideo();
+
+      if (videoRef.current) {
+        try {
+          videoRef.current.srcObject = stream;
+          // some browsers require play() to be called after being visible
+          // ignore play errors (autoplay policies) and continue — scanner will use frames when available
+          // eslint-disable-next-line no-await-in-loop
+          await videoRef.current.play().catch(() => {});
+        } catch (e) {
+          console.warn("Video play error", e);
+        }
+      }
 
       if (hasBarcode) {
         barcodeDetectorRef.current = new window.BarcodeDetector({
@@ -381,33 +432,32 @@ function VendorDashboard({ handleLogout }) {
         // respect backend hint header to stop polling immediately
         const isFinal = response.headers.get("x-payment-final");
 
-        // update generatedQR status if it changed
-        if (data.status && data.status !== generatedQR.status) {
-          setGeneratedQR((prev) => ({ ...prev, status: data.status }));
+        // normalize status value
+        const s = (data.status || "").toString().toLowerCase();
+
+        // update generatedQR status if it changed (always normalize to lowercase)
+        if (s && s !== (generatedQR.status || "").toString().toLowerCase()) {
+          setGeneratedQR((prev) => ({ ...prev, status: s }));
           // show a toast when payment completes or fails, but only once per session
           if (
-            (data.status === "completed" || data.status === "failed") &&
+            (s === "completed" || s === "failed") &&
             !finalToastShownRef.current
           ) {
             finalToastShownRef.current = true;
             setToast({
               visible: true,
               message:
-                data.status === "completed"
+                s === "completed"
                   ? "Payment completed ✅"
                   : "Payment failed ❌",
-              type: data.status === "completed" ? "success" : "error",
+              type: s === "completed" ? "success" : "error",
             });
             setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
           }
         }
 
         // stop polling when final state reached (or backend hinted final)
-        if (
-          data.status === "completed" ||
-          data.status === "failed" ||
-          isFinal
-        ) {
+        if (s === "completed" || s === "failed" || isFinal) {
           stopped = true;
           // refresh transactions and stats so UI reflects change
           fetchDashboardStats();
@@ -627,6 +677,9 @@ function VendorDashboard({ handleLogout }) {
                   <span>Status:</span>
                   {generatedQR.status === "failed" ? (
                     <span className="badge badge-error">Failed</span>
+                  ) : generatedQR.status === "completed" ||
+                    generatedQR.status === "paid" ? (
+                    <span className="badge badge-success">Completed</span>
                   ) : (
                     <span className="badge badge-warning">Pending Payment</span>
                   )}
@@ -650,6 +703,75 @@ function VendorDashboard({ handleLogout }) {
                 <button className="btn btn-primary" onClick={openAsCustomer}>
                   Open as Customer
                 </button>
+                {generatedQR.status === "pending" && (
+                  <button
+                    className="btn btn-warning"
+                    onClick={async () => {
+                      if (!generatedQR || !generatedQR.session_id) return;
+                      const ok = window.confirm(
+                        "Cancel this payment session? This will mark it failed."
+                      );
+                      if (!ok) return;
+                      setCanceling(true);
+                      try {
+                        const r = await fetch(
+                          `${API_URL}/api/payments/cancel/`,
+                          {
+                            method: "POST",
+                            headers: getAuthHeaders(),
+                            body: JSON.stringify({
+                              session_id: generatedQR.session_id,
+                            }),
+                          }
+                        );
+                        if (!r.ok) {
+                          const body = await r.json().catch(() => ({}));
+                          setToast({
+                            visible: true,
+                            message: body.error || "Cancel failed",
+                            type: "error",
+                          });
+                          setTimeout(
+                            () => setToast((t) => ({ ...t, visible: false })),
+                            4000
+                          );
+                        } else {
+                          setGeneratedQR((prev) => ({
+                            ...prev,
+                            status: "failed",
+                          }));
+                          setToast({
+                            visible: true,
+                            message: "Session cancelled",
+                            type: "info",
+                          });
+                          setTimeout(
+                            () => setToast((t) => ({ ...t, visible: false })),
+                            4000
+                          );
+                          fetchDashboardStats();
+                          fetchTransactions();
+                        }
+                      } catch (e) {
+                        console.warn("Cancel error", e);
+                        setToast({
+                          visible: true,
+                          message: "Network error cancelling",
+                          type: "error",
+                        });
+                        setTimeout(
+                          () => setToast((t) => ({ ...t, visible: false })),
+                          4000
+                        );
+                      } finally {
+                        setCanceling(false);
+                      }
+                    }}
+                    disabled={canceling}
+                  >
+                    {canceling ? "Cancelling..." : "Cancel Session"}
+                  </button>
+                )}
                 <button
                   className="btn btn-secondary"
                   onClick={() => setGeneratedQR(null)}
