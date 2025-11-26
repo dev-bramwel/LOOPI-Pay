@@ -920,39 +920,270 @@ export default VendorDashboard;
 
 // Simple inline LineChart component (SVG) — no external deps
 function LineChart({ transactions }) {
-  // Group completed transactions by date (YYYY-MM-DD)
+  // timeframe options: hours, days, weeks, months, years
+  const [timeframe, setTimeframe] = useState("days");
+  const [tooltip, setTooltip] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    label: "",
+  });
+  const containerRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(700);
+
+  const scaleRef = useRef(1);
+  const [scaleState, setScaleState] = useState(1);
+  const isDraggingRef = useRef(false);
+  const dragStartXRef = useRef(0);
+  const dragStartScrollRef = useRef(0);
+  const pinchStartDistRef = useRef(0);
+  const pinchStartScaleRef = useRef(1);
+
+  const baseSpacingFor = (tf) =>
+    tf === "hours"
+      ? 80
+      : tf === "days"
+      ? 56
+      : tf === "weeks"
+      ? 72
+      : tf === "months"
+      ? 90
+      : 120;
+
+  useEffect(() => {
+    const update = () => {
+      const w = containerRef.current?.clientWidth || 700;
+      setContainerWidth(w);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   const completed = (transactions || []).filter((t) => {
     const s = (t.status || "").toString().toLowerCase();
-    return s === "completed" || s === "paid" || s === "paid";
+    return s === "completed" || s === "paid";
   });
+
+  // derive a key for grouping based on timeframe
+  const keyFor = (date) => {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    switch (timeframe) {
+      case "hours": {
+        // round to 30 minute bins: produce key like YYYY-MM-DDTHH:MM where MM is 00 or 30
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const hh = String(d.getHours()).padStart(2, "0");
+        const minute = d.getMinutes();
+        const mbin = minute < 30 ? "00" : "30";
+        return `${yyyy}-${mm}-${dd}T${hh}:${mbin}`;
+      }
+      case "weeks": {
+        // compute ISO week-year start (Monday)
+        const tmp = new Date(
+          Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+        );
+        const day = tmp.getUTCDay() || 7; // 1..7 (Mon..Sun)
+        tmp.setUTCDate(tmp.getUTCDate() - day + 1);
+        return tmp.toISOString().slice(0, 10);
+      }
+      case "months":
+        return d.toISOString().slice(0, 7); // YYYY-MM
+      case "years":
+        return d.getFullYear().toString();
+      case "days":
+      default:
+        return d.toISOString().slice(0, 10); // YYYY-MM-DD
+    }
+  };
+
+  const labelFor = (key) => {
+    if (!key) return "";
+    switch (timeframe) {
+      case "hours":
+        // key: 'YYYY-MM-DDTHH:MM' -> show HH:MM
+        return key.slice(-5);
+      case "weeks":
+        return key; // start of week date
+      case "months":
+        return key; // YYYY-MM
+      case "years":
+        return key;
+      case "days":
+      default:
+        return key.slice(5); // MM-DD
+    }
+  };
 
   const groups = {};
   completed.forEach((t) => {
-    const d = new Date(t.created_at || t.paid_at || t.createdAt || Date.now());
-    if (isNaN(d.getTime())) return;
-    const day = d.toISOString().slice(0, 10);
+    const d =
+      t.paid_at || t.created_at || t.createdAt || new Date().toISOString();
+    const k = keyFor(d);
+    if (!k) return;
     const amt = parseFloat(t.amount || 0) || 0;
-    groups[day] = (groups[day] || 0) + amt;
+    groups[k] = (groups[k] || 0) + amt;
   });
 
-  const dates = Object.keys(groups).sort();
-  if (dates.length === 0) {
-    return <div className="chart-empty">No completed payments yet</div>;
-  }
+  const keys = Object.keys(groups).sort();
+  // For hours timeframe, ensure we present fixed 30-minute bins for a single day (00:00 -> 23:30)
+  if (timeframe === "hours") {
+    // choose target day: use most recent completed transaction date or today
+    let targetDay = null;
+    if (completed.length > 0) {
+      const latest = completed.reduce((a, b) => {
+        const da = new Date(a.paid_at || a.created_at || a.createdAt || 0);
+        const db = new Date(b.paid_at || b.created_at || b.createdAt || 0);
+        return da > db ? a : b;
+      });
+      const d = new Date(
+        latest.paid_at || latest.created_at || latest.createdAt || Date.now()
+      );
+      targetDay = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(d.getDate()).padStart(2, "0")}`;
+    } else {
+      const now = new Date();
+      targetDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(now.getDate()).padStart(2, "0")}`;
+    }
 
-  const values = dates.map((d) => groups[d]);
+    const allBins = [];
+    for (let i = 0; i < 48; i++) {
+      const hh = String(Math.floor(i / 2)).padStart(2, "0");
+      const mm = i % 2 === 0 ? "00" : "30";
+      allBins.push(`${targetDay}T${hh}:${mm}`);
+    }
+    // ensure groups has zero for missing bins so chart displays them
+    allBins.forEach((k) => {
+      if (!Object.prototype.hasOwnProperty.call(groups, k)) groups[k] = 0;
+    });
+    // overwrite keys to be the full day's bins in order
+    keys.length = 0;
+    allBins.forEach((k) => keys.push(k));
+  }
+  if (keys.length === 0)
+    return <div className="chart-empty">No completed payments yet</div>;
+
+  // attach handlers for pan (drag), wheel-zoom, and pinch-zoom on the container
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const clientX = e.clientX - rect.left + el.scrollLeft;
+      const oldScale = scaleRef.current || 1;
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      let newScale = Math.max(0.4, Math.min(4, oldScale * zoomFactor));
+      scaleRef.current = newScale;
+      setScaleState(newScale);
+
+      const base = baseSpacingFor(timeframe);
+      const pad = 24;
+      const oldWidth = Math.max(
+        containerWidth,
+        keys.length * base * oldScale + pad * 2
+      );
+      const newWidth = Math.max(
+        containerWidth,
+        keys.length * base * newScale + pad * 2
+      );
+      const ratio = clientX / oldWidth || 0;
+      const newScroll = ratio * newWidth - (e.clientX - rect.left);
+      el.scrollLeft = Math.max(0, newScroll);
+    };
+
+    const onMouseDown = (e) => {
+      isDraggingRef.current = true;
+      dragStartXRef.current = e.pageX - el.getBoundingClientRect().left;
+      dragStartScrollRef.current = el.scrollLeft;
+      el.classList.add("dragging");
+    };
+
+    const onMouseMove = (e) => {
+      if (!isDraggingRef.current) return;
+      const x = e.pageX - el.getBoundingClientRect().left;
+      const dx = x - dragStartXRef.current;
+      el.scrollLeft = Math.max(0, dragStartScrollRef.current - dx);
+    };
+
+    const stopDrag = () => {
+      isDraggingRef.current = false;
+      el.classList.remove("dragging");
+    };
+
+    const getDist = (t1, t2) =>
+      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const onTouchStart = (ev) => {
+      if (ev.touches.length === 1) {
+        dragStartXRef.current =
+          ev.touches[0].clientX - el.getBoundingClientRect().left;
+        dragStartScrollRef.current = el.scrollLeft;
+      } else if (ev.touches.length === 2) {
+        pinchStartDistRef.current = getDist(ev.touches[0], ev.touches[1]);
+        pinchStartScaleRef.current = scaleRef.current || 1;
+      }
+    };
+
+    const onTouchMove = (ev) => {
+      if (ev.touches.length === 1 && !isDraggingRef.current) {
+        const x = ev.touches[0].clientX - el.getBoundingClientRect().left;
+        const dx = x - dragStartXRef.current;
+        el.scrollLeft = Math.max(0, dragStartScrollRef.current - dx);
+      } else if (ev.touches.length === 2) {
+        ev.preventDefault();
+        const d = getDist(ev.touches[0], ev.touches[1]);
+        const factor = d / (pinchStartDistRef.current || d || 1);
+        let newScale = Math.max(
+          0.4,
+          Math.min(4, (pinchStartScaleRef.current || 1) * factor)
+        );
+        scaleRef.current = newScale;
+        setScaleState(newScale);
+      }
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", stopDrag);
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", stopDrag);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [containerRef, keys.length, timeframe, containerWidth]);
+
+  // spacing: number of pixels per point to allow horizontal zooming/scroll
+  const pointSpacing = baseSpacingFor(timeframe) * (scaleRef.current || 1);
+
+  // compute svg width based on points and container width
+  const pad = 24;
+  const w = Math.max(containerWidth, keys.length * pointSpacing + pad * 2);
+  const h = 180;
+
+  const values = keys.map((k) => groups[k]);
   const max = Math.max(...values);
   const min = Math.min(...values);
 
-  const w = 700;
-  const h = 160;
-  const pad = 24;
-
   const points = values.map((v, i) => {
-    const x = pad + (i / Math.max(1, dates.length - 1)) * (w - pad * 2);
+    const x = pad + i * ((w - pad * 2) / Math.max(1, keys.length - 1));
     const y =
       h - pad - ((v - min) / Math.max(1, max - min)) * (h - pad * 2 || 1);
-    return { x, y, v, d: dates[i] };
+    return { x, y, v, k: keys[i] };
   });
 
   const pathD = points
@@ -962,115 +1193,141 @@ function LineChart({ transactions }) {
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
     .join(" ")} L ${w - pad} ${h - pad} L ${pad} ${h - pad} Z`;
 
-  // tooltip state
-  const [tooltip, setTooltip] = useState({
-    visible: false,
-    x: 0,
-    y: 0,
-    label: "",
-  });
-  const containerRef = useRef(null);
-
   return (
-    <div
-      className="line-chart"
-      style={{ maxWidth: "100%", overflow: "hidden", position: "relative" }}
-      ref={containerRef}
-    >
-      <svg
-        viewBox={`0 0 ${w} ${h}`}
-        preserveAspectRatio="xMidYMid meet"
-        width="100%"
-        height="160"
+    <div style={{ width: "100%" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 8,
+        }}
       >
-        <defs>
-          <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(14,165,233,0.14)" />
-            <stop offset="100%" stopColor="rgba(16,185,129,0.02)" />
-          </linearGradient>
-        </defs>
-        {/* area */}
-        <path d={areaD} fill="url(#areaGrad)" stroke="none" />
-        {/* line */}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="var(--brand-blue)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* points */}
-        {points.map((p, i) => (
-          <g key={p.d}>
-            <circle
-              cx={p.x}
-              cy={p.y}
-              r={4}
-              fill="var(--brand-green)"
-              style={{ cursor: "pointer", transition: "r 120ms" }}
-              onMouseEnter={(e) => {
-                const rect = containerRef.current?.getBoundingClientRect();
-                const clientX =
-                  e.clientX || (e.nativeEvent && e.nativeEvent.clientX);
-                const clientY =
-                  e.clientY || (e.nativeEvent && e.nativeEvent.clientY);
-                const x = rect ? clientX - rect.left : p.x;
-                const y = rect ? clientY - rect.top : p.y;
-                setTooltip({
-                  visible: true,
-                  x,
-                  y,
-                  label: `${p.d}: KES ${p.v.toLocaleString()}`,
-                });
-              }}
-              onMouseMove={(e) => {
-                const rect = containerRef.current?.getBoundingClientRect();
-                const clientX =
-                  e.clientX || (e.nativeEvent && e.nativeEvent.clientX);
-                const clientY =
-                  e.clientY || (e.nativeEvent && e.nativeEvent.clientY);
-                const x = rect ? clientX - rect.left : p.x;
-                const y = rect ? clientY - rect.top : p.y;
-                setTooltip((t) => ({ ...t, x, y }));
-              }}
-              onMouseLeave={() =>
-                setTooltip({ visible: false, x: 0, y: 0, label: "" })
-              }
-            />
-          </g>
-        ))}
-        {/* x labels (sparse) */}
-        {points.map((p, i) => {
-          const show =
-            i === 0 ||
-            i === points.length - 1 ||
-            i % Math.ceil(Math.max(1, points.length / 4)) === 0;
-          return (
-            show && (
-              <text
-                key={p.d}
-                x={p.x}
-                y={h - 4}
-                fontSize={10}
-                textAnchor="middle"
-                fill="#334155"
-              >
-                {p.d.slice(5)}
-              </text>
-            )
-          );
-        })}
-      </svg>
-      <div className="chart-summary">
-        <div>
-          Total completed:{" "}
-          <strong>
-            KES {values.reduce((a, b) => a + b, 0).toLocaleString()}
-          </strong>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[
+            ["hours", "Hours"],
+            ["days", "Days"],
+            ["weeks", "Weeks"],
+            ["months", "Months"],
+            ["years", "Years"],
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              className={`btn ${
+                timeframe === k ? "btn-primary" : "btn-outline"
+              }`}
+              onClick={() => setTimeframe(k)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="chart-summary">
+          <div>
+            Total completed:{" "}
+            <strong>
+              KES {values.reduce((a, b) => a + b, 0).toLocaleString()}
+            </strong>
+          </div>
         </div>
       </div>
-      {/* Tooltip */}
+
+      <div
+        ref={containerRef}
+        style={{
+          overflowX: "auto",
+          width: "100%",
+          border: "1px solid rgba(0,0,0,0.04)",
+          borderRadius: 6,
+        }}
+      >
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          width={w}
+          height={h}
+          preserveAspectRatio="xMinYMid"
+        >
+          <defs>
+            <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="rgba(14,165,233,0.14)" />
+              <stop offset="100%" stopColor="rgba(16,185,129,0.02)" />
+            </linearGradient>
+          </defs>
+          <path d={areaD} fill="url(#areaGrad)" stroke="none" />
+          <path
+            d={pathD}
+            fill="none"
+            stroke="var(--brand-blue)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {points.map((p) => (
+            <g key={p.k}>
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={4}
+                fill="var(--brand-green)"
+                style={{ cursor: "pointer", transition: "r 120ms" }}
+                onMouseEnter={(e) => {
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  const clientX =
+                    e.clientX || (e.nativeEvent && e.nativeEvent.clientX);
+                  const clientY =
+                    e.clientY || (e.nativeEvent && e.nativeEvent.clientY);
+                  const x = rect ? clientX - rect.left : p.x;
+                  const y = rect ? clientY - rect.top : p.y;
+                  setTooltip({
+                    visible: true,
+                    x,
+                    y,
+                    label: `${labelFor(p.k)}: KES ${p.v.toLocaleString()}`,
+                  });
+                }}
+                onMouseMove={(e) => {
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  const clientX =
+                    e.clientX || (e.nativeEvent && e.nativeEvent.clientX);
+                  const clientY =
+                    e.clientY || (e.nativeEvent && e.nativeEvent.clientY);
+                  const x = rect ? clientX - rect.left : p.x;
+                  const y = rect ? clientY - rect.top : p.y;
+                  setTooltip((t) => ({ ...t, x, y }));
+                }}
+                onMouseLeave={() =>
+                  setTooltip({ visible: false, x: 0, y: 0, label: "" })
+                }
+              />
+            </g>
+          ))}
+
+          {/* x labels (sparse) */}
+          {points.map((p, i) => {
+            const show =
+              i === 0 ||
+              i === points.length - 1 ||
+              i % Math.ceil(Math.max(1, points.length / 6)) === 0;
+            return (
+              show && (
+                <text
+                  key={p.k}
+                  x={p.x}
+                  y={h - 6}
+                  fontSize={10}
+                  textAnchor="middle"
+                  fill="#334155"
+                >
+                  {labelFor(p.k)}
+                </text>
+              )
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Tooltip positioned relative to container */}
       {tooltip.visible && (
         <div
           className="chart-tooltip"
