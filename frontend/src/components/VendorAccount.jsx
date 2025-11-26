@@ -144,6 +144,94 @@ function VendorAccount() {
         </div>
       )}
 
+      {/* Verification status */}
+      <div
+        style={{
+          margin: "12px 0",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div>
+          <strong>Email status:</strong>
+        </div>
+        <div>
+          {vendor.is_verified ? (
+            <span className="badge badge-success">Verified</span>
+          ) : (
+            <>
+              <span className="badge badge-warning">Not Verified</span>
+              <div style={{ display: "inline-block", marginLeft: 10 }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(
+                        `${API_URL}/api/vendors/resend-verification/`,
+                        {
+                          method: "POST",
+                          headers: getAuthHeaders(),
+                          body: JSON.stringify({ email: vendor.email }),
+                        }
+                      );
+                      if (res.status === 404) {
+                        setToast({
+                          visible: true,
+                          message:
+                            "Resend verification not available on server.",
+                          type: "error",
+                        });
+                        setTimeout(
+                          () => setToast((t) => ({ ...t, visible: false })),
+                          4000
+                        );
+                        return;
+                      }
+                      if (!res.ok) {
+                        const body = await res.json().catch(() => ({}));
+                        setToast({
+                          visible: true,
+                          message:
+                            body.error || "Failed to resend verification.",
+                          type: "error",
+                        });
+                        setTimeout(
+                          () => setToast((t) => ({ ...t, visible: false })),
+                          4000
+                        );
+                        return;
+                      }
+                      setToast({
+                        visible: true,
+                        message: "Verification email resent.",
+                        type: "success",
+                      });
+                      setTimeout(
+                        () => setToast((t) => ({ ...t, visible: false })),
+                        4000
+                      );
+                    } catch (e) {
+                      setToast({
+                        visible: true,
+                        message: "Network error while resending.",
+                        type: "error",
+                      });
+                      setTimeout(
+                        () => setToast((t) => ({ ...t, visible: false })),
+                        4000
+                      );
+                    }
+                  }}
+                >
+                  Resend Verification
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} style={{ maxWidth: 700, margin: "0 auto" }}>
         <div className="form-group">
           <label>Email (read-only)</label>
