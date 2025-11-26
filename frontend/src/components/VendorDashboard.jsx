@@ -552,16 +552,16 @@ function VendorDashboard({ handleLogout }) {
               <h3>Total Transactions</h3>
               <p className="stat-value">{stats.total_transactions}</p>
             </div>
-            <div className="stat-card">
+              <div className="stat-card">
               <h3>Total Revenue</h3>
               <p className="stat-value">
-                ₦{stats.total_revenue.toLocaleString()}
+                KES {stats.total_revenue.toLocaleString()}
               </p>
             </div>
-            <div className="stat-card">
+              <div className="stat-card">
               <h3>Today's Revenue</h3>
               <p className="stat-value">
-                ₦{stats.today_revenue.toLocaleString()}
+                KES {stats.today_revenue.toLocaleString()}
               </p>
             </div>
             <div className="stat-card">
@@ -597,7 +597,7 @@ function VendorDashboard({ handleLogout }) {
                         <tr key={transaction.id}>
                           <td>{transaction.session_id}</td>
                           <td>
-                            ₦{parseFloat(transaction.amount).toLocaleString()}
+                            KES {parseFloat(transaction.amount).toLocaleString()}
                           </td>
                           <td>
                             <span
@@ -634,7 +634,7 @@ function VendorDashboard({ handleLogout }) {
 
               <form onSubmit={generateQR} className="generate-form">
                 <div className="form-group">
-                  <label>Amount (₦)</label>
+                  <label>Amount (KES)</label>
                   <input
                     type="number"
                     value={amount}
@@ -670,7 +670,7 @@ function VendorDashboard({ handleLogout }) {
                 <div className="detail-row">
                   <span>Amount:</span>
                   <strong>
-                    ₦{parseFloat(generatedQR.amount).toLocaleString()}
+                    KES {parseFloat(generatedQR.amount).toLocaleString()}
                   </strong>
                 </div>
                 <div className="detail-row">
@@ -860,7 +860,7 @@ function VendorDashboard({ handleLogout }) {
                     <tr key={transaction.id}>
                       <td className="session-id">{transaction.session_id}</td>
                       <td>
-                        ₦{parseFloat(transaction.amount).toLocaleString()}
+                        KES {parseFloat(transaction.amount).toLocaleString()}
                       </td>
                       <td>
                         <span

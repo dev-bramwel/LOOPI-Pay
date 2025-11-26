@@ -94,7 +94,7 @@ def generate_payment_qr(session_id, amount, vendor, output_dir="qr_codes", backe
     print(f"\n✅ QR code generated successfully!")
     print(f"📁 Saved to: {filename}")
     print(f"📦 Payload: {qr_data}")
-    print(f"💰 Amount: ₦{amount}")
+    print(f"💰 Amount: KES {amount}")
     print(f"🏪 Vendor: {vendor}")
     print(f"🆔 Session ID: {session_id}")
     
