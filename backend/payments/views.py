@@ -15,13 +15,62 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from .models import PaymentSession
+from .models import PaymentSession, WebhookAudit
 from .serializers import PaymentInitiateSerializer
 import logging
 from vendors.models import Vendor
 from datetime import timedelta
 
 logger = logging.getLogger(__name__)
+
+
+def _attempt_paystack_cancel(payment_session):
+    """Best-effort attempt to cancel/disable any stored authorization for a session.
+
+    This checks the current Paystack transaction for the session's reference. If
+    an authorization code is present, it attempts to disable that authorization
+    via Paystack's `/authorization/disable` endpoint. Results are recorded in
+    the session metadata under `cancel_attempt` for debugging.
+    """
+    try:
+        ref = getattr(payment_session, 'paystack_reference', None)
+        if not ref:
+            return None
+
+        verify_url = f"https://api.paystack.co/transaction/verify/{ref}"
+        headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+        r = requests.get(verify_url, headers=headers, timeout=8)
+        if r.status_code != 200:
+            return None
+        resp = r.json()
+        auth = resp.get('data', {}).get('authorization') or {}
+        auth_code = auth.get('authorization_code')
+        if not auth_code:
+            # nothing to disable
+            return None
+
+        disable_url = "https://api.paystack.co/authorization/disable"
+        payload = {"authorization_code": auth_code}
+        dr = requests.post(disable_url, json=payload, headers=headers, timeout=8)
+        try:
+            dr_data = dr.json()
+        except Exception:
+            dr_data = {"status_code": dr.status_code}
+
+        # persist cancel attempt info in metadata
+        meta = getattr(payment_session, 'metadata', None) or {}
+        meta['cancel_attempt'] = {
+            'time': timezone.now().isoformat(),
+            'authorization_code': auth_code,
+            'response': dr_data,
+        }
+        PaymentSession.objects.filter(pk=payment_session.pk).update(metadata=meta)
+        payment_session.refresh_from_db()
+        logger.info("Attempted Paystack cancel for session %s, auth=%s, result=%s", payment_session.session_id, auth_code, dr_data)
+        return dr_data
+    except Exception as e:
+        logger.warning("Error attempting paystack cancel for session %s: %s", getattr(payment_session, 'session_id', None), e)
+        return None
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -324,7 +373,14 @@ def paystack_webhook(request):
     expected_signature = hash_object.hexdigest()
 
     if not hmac.compare_digest(expected_signature, paystack_signature):
-        logger.warning("Invalid webhook signature")
+        # Log more context to help debugging signature issues (do NOT log secret)
+        body_snip = request.body.decode('utf-8', errors='replace')[:1000]
+        logger.warning(
+            "Invalid webhook signature. Received=%s; Headers=%s; Body(start)=%s",
+            paystack_signature,
+            dict(request.headers),
+            body_snip,
+        )
         return JsonResponse({"error": "Invalid signature"}, status=400)
 
     # Parse event data
@@ -338,15 +394,63 @@ def paystack_webhook(request):
     data = event.get('data', {})
     reference = data.get('reference')
 
+    # Create an audit record for this webhook (payload and headers)
+    try:
+        # Ensure headers are JSON-serializable by stringifying values
+        incoming_headers = dict(request.headers)
+        safe_headers = {k: str(v) for k, v in incoming_headers.items()}
+        # payload is already a parsed JSON dict (event)
+        safe_payload = event
+        audit = WebhookAudit.objects.create(
+            event=event_type,
+            reference=reference,
+            payload=safe_payload,
+            headers=safe_headers,
+            processed=False,
+        )
+    except Exception as e:
+        logger.exception("Failed to create WebhookAudit record: %s", e)
+        audit = None
+
     if not reference:
         logger.warning("Webhook event missing reference")
         return JsonResponse({"error": "Missing reference"}, status=400)
 
-    # Find payment session
+    # Find payment session by reference
     payment_session = PaymentSession.objects.filter(paystack_reference=reference).first()
+
+    # Fallback: if not found by reference, try mapping via metadata.session_id
+    if not payment_session:
+        logger.info("No PaymentSession matched by paystack_reference=%s, attempting metadata lookup", reference)
+        md = data.get('metadata', {}) or {}
+        sid = md.get('session_id')
+        if sid:
+            payment_session = PaymentSession.objects.filter(session_id=sid).first()
+            if payment_session:
+                logger.info("Resolved PaymentSession by metadata.session_id=%s -> %s", sid, payment_session.pk)
+
+    # Last-resort: verify the reference with Paystack and try to extract metadata.session_id
+    if not payment_session:
+        try:
+            verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+            headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+            vr = requests.get(verify_url, headers=headers, timeout=8)
+            if vr.status_code == 200:
+                vdata = vr.json()
+                vmd = vdata.get('data', {}).get('metadata', {}) or {}
+                vsid = vmd.get('session_id')
+                if vsid:
+                    payment_session = PaymentSession.objects.filter(session_id=vsid).first()
+                    if payment_session:
+                        logger.info("Resolved PaymentSession by Paystack verify metadata.session_id=%s -> %s", vsid, payment_session.pk)
+        except requests.RequestException as e:
+            logger.warning("Error verifying reference with Paystack while resolving session: %s", e)
 
     if not payment_session:
         logger.warning(f"Payment session not found for reference: {reference}")
+        if audit:
+            audit.result = "session_not_found_by_reference"
+            audit.save()
         return JsonResponse({"error": "Payment session not found"}, status=404)
 
     # If this session was auto-failed by the app (customer timed out), ignore
@@ -386,6 +490,14 @@ def paystack_webhook(request):
             pass
 
     payment_session.save()
+
+    if audit:
+        audit.processed = True
+        audit.result = f"processed:event={event_type},session={payment_session.session_id}"
+        try:
+            audit.save()
+        except Exception as e:
+            logger.exception("Failed to save WebhookAudit processed state: %s", e)
 
     return JsonResponse({"status": "success"}, status=200)
 
@@ -482,6 +594,11 @@ def payment_status(request, session_id):
             except Exception:
                 # no transaction found or other error - ignore silently
                 pass
+            # Best-effort: try to cancel/disable any Paystack authorization for this session
+            try:
+                _attempt_paystack_cancel(payment_session)
+            except Exception:
+                pass
 
     return Response({
         "session_id": payment_session.session_id,
@@ -537,6 +654,12 @@ def cancel_payment(request):
             transaction.save()
     except Exception:
         # ignore errors updating transactions
+        pass
+
+    # Best-effort: try to cancel/disable any Paystack authorization for this session
+    try:
+        _attempt_paystack_cancel(payment_session)
+    except Exception:
         pass
 
     return Response({"status": "cancelled", "session_id": payment_session.session_id}, status=status.HTTP_200_OK)

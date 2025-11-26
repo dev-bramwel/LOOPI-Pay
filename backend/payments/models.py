@@ -45,3 +45,32 @@ class PaymentSession(models.Model):
 
     def __str__(self):
         return f"PaymentSession(session_id={self.session_id}, amount={self.amount}, status={self.status})"
+
+
+class WebhookAudit(models.Model):
+    """Stores incoming webhook payloads and processing results for debugging/audit.
+
+    Fields:
+    - id: auto
+    - received_at: timestamp
+    - event: webhook event name (e.g., charge.success)
+    - reference: the paystack reference (if present)
+    - payload: JSON of the full webhook body
+    - headers: JSON of request headers
+    - processed: boolean whether the app processed the event
+    - result: optional short description/result of processing
+    """
+
+    received_at = models.DateTimeField(auto_now_add=True)
+    event = models.CharField(max_length=128, blank=True, null=True)
+    reference = models.CharField(max_length=255, blank=True, null=True)
+    payload = models.JSONField(null=True, blank=True)
+    headers = models.JSONField(null=True, blank=True)
+    processed = models.BooleanField(default=False)
+    result = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-received_at"]
+
+    def __str__(self):
+        return f"WebhookAudit(event={self.event}, reference={self.reference}, at={self.received_at})"
