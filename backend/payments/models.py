@@ -2,7 +2,6 @@ import uuid
 from django.db import models
 from django.conf import settings
 
-
 class PaymentSession(models.Model):
     """Represents a payment session initiated for a vendor or a guest.
 
