@@ -11,6 +11,8 @@ import VendorLogin from "./components/VendorLogin";
 import VendorDashboard from "./components/VendorDashboard";
 import VerifyEmail from "./components/VerifyEmail";
 import VendorAccount from "./components/VendorAccount";
+import ForgotPassword from "./components/ForgotPassword";
+import AdminPanel from "./components/AdminPanel";
 import Footer from "./components/Footer";
 import PayRedirect from "./PayRedirect";
 import PaymentCallback from "./PaymentCallback";
@@ -31,6 +33,8 @@ function AppWrapper() {
       <Route path="/vendor/register" element={<VendorRegister />} />
       <Route path="/vendor/login" element={<VendorLogin />} />
       <Route path="/vendor/account" element={<VendorAccount />} />
+      <Route path="/vendor/forgot-password" element={<ForgotPassword />} />
+      <Route path="/admin-panel" element={<AdminPanel />} />
       <Route
         path="/vendor/verify"
         element={<VerifyEmail setIsVendor={() => {}} />}

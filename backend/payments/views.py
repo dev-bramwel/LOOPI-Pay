@@ -17,6 +17,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from .models import PaymentSession, WebhookAudit
 from .serializers import PaymentInitiateSerializer
+from .serializers import WebhookAuditSerializer
+from rest_framework.permissions import IsAdminUser
 import logging
 from vendors.models import Vendor
 from datetime import timedelta
@@ -667,5 +669,133 @@ def cancel_payment(request):
         _attempt_paystack_cancel(payment_session)
     except Exception:
         pass
+
+
+# --- Admin API for WebhookAudit ---
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def webhook_audit_list(request):
+    """List webhook audits for staff users. Supports ?processed=true|false and simple search by reference/event."""
+    qs = WebhookAudit.objects.all().order_by('-received_at')
+    processed = request.query_params.get('processed')
+    if processed is not None:
+        if processed.lower() in ('1', 'true', 'yes'):
+            qs = qs.filter(processed=True)
+        elif processed.lower() in ('0', 'false', 'no'):
+            qs = qs.filter(processed=False)
+
+    q = request.query_params.get('q')
+    if q:
+        qs = qs.filter(models.Q(reference__icontains=q) | models.Q(event__icontains=q) | models.Q(result__icontains=q))
+
+    # simple pagination
+    try:
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 50))
+    except Exception:
+        page = 1
+        page_size = 50
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    total = qs.count()
+    items = qs[start:end]
+    serializer = WebhookAuditSerializer(items, many=True)
+    return Response({
+        'count': total,
+        'page': page,
+        'page_size': page_size,
+        'results': serializer.data,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def webhook_audit_detail(request, pk):
+    wa = WebhookAudit.objects.filter(pk=pk).first()
+    if not wa:
+        return Response({'error': 'Not found'}, status=404)
+    serializer = WebhookAuditSerializer(wa)
+    return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAdminUser])
+def webhook_audit_reprocess(request, pk):
+    """Re-run processing for a single WebhookAudit (mirrors admin action)."""
+    wa = WebhookAudit.objects.filter(pk=pk).first()
+    if not wa:
+        return Response({'error': 'Not found'}, status=404)
+
+    processed = 0
+    try:
+        payload = wa.payload or {}
+        event_type = payload.get('event')
+        data = payload.get('data', {})
+        reference = data.get('reference') or wa.reference
+
+        # Try to resolve PaymentSession by reference
+        ps = None
+        if reference:
+            ps = PaymentSession.objects.filter(paystack_reference=reference).first()
+
+        # Fallback: try metadata.session_id from payload
+        if not ps:
+            md = data.get('metadata', {}) or {}
+            sid = md.get('session_id')
+            if sid:
+                ps = PaymentSession.objects.filter(session_id=sid).first()
+
+        if not ps and wa.reference:
+            ps = PaymentSession.objects.filter(paystack_reference=wa.reference).first()
+
+        if not ps:
+            wa.result = 'reprocess:session_not_found'
+            wa.processed = False
+            wa.save()
+            return Response({'status': 'session_not_found'}, status=200)
+
+        # Ignore if session already failed due to auto-fail
+        meta = getattr(ps, 'metadata', {}) or {}
+        if meta.get('auto_failed') or ps.status == PaymentSession.STATUS_FAILED:
+            wa.result = f"reprocess:ignored_auto_failed:{ps.session_id}"
+            wa.processed = True
+            wa.save()
+            return Response({'status': 'ignored_auto_failed'}, status=200)
+
+        # Apply event semantics
+        if event_type == 'charge.success':
+            ps.status = PaymentSession.STATUS_COMPLETED
+            try:
+                from vendors.models import Transaction
+                tx = Transaction.objects.get(session_id=ps.session_id)
+                tx.status = 'paid'
+                tx.paid_at = timezone.now()
+                tx.paystack_reference = reference or tx.paystack_reference
+                tx.save()
+            except Exception:
+                pass
+        elif event_type == 'charge.failed':
+            ps.status = PaymentSession.STATUS_FAILED
+            try:
+                from vendors.models import Transaction
+                tx = Transaction.objects.get(session_id=ps.session_id)
+                tx.status = 'failed'
+                tx.save()
+            except Exception:
+                pass
+
+        ps.save()
+        wa.processed = True
+        wa.result = f"reprocessed:event={event_type},session={ps.session_id}"
+        wa.save()
+        processed += 1
+    except Exception as e:
+        wa.result = f"reprocess_error:{str(e)[:200]}"
+        wa.processed = False
+        wa.save()
+        return Response({'status': 'error', 'detail': str(e)}, status=500)
+
+    return Response({'status': 'ok', 'processed': processed})
 
     return Response({"status": "cancelled", "session_id": payment_session.session_id}, status=status.HTTP_200_OK)

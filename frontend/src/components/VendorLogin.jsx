@@ -6,6 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 function VendorLogin() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", password: "" });
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -25,12 +26,22 @@ function VendorLogin() {
       const data = await res.json();
       if (res.ok) {
         if (data.tokens) {
-          localStorage.setItem("vendorToken", data.tokens.access);
-          localStorage.setItem("vendorRefreshToken", data.tokens.refresh);
-          localStorage.setItem(
-            "vendorData",
-            JSON.stringify(data.vendor || { email: form.email })
-          );
+          // Persist tokens to localStorage if Remember Me is checked; otherwise use sessionStorage
+          if (remember) {
+            localStorage.setItem("vendorToken", data.tokens.access);
+            localStorage.setItem("vendorRefreshToken", data.tokens.refresh);
+            localStorage.setItem(
+              "vendorData",
+              JSON.stringify(data.vendor || { email: form.email })
+            );
+          } else {
+            sessionStorage.setItem("vendorToken", data.tokens.access);
+            sessionStorage.setItem("vendorRefreshToken", data.tokens.refresh);
+            sessionStorage.setItem(
+              "vendorData",
+              JSON.stringify(data.vendor || { email: form.email })
+            );
+          }
           navigate("/vendor/dashboard");
         } else {
           setError("Login succeeded but no tokens returned");
@@ -81,11 +92,24 @@ function VendorLogin() {
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? "Logging in..." : "Login"}
           </button>
-          <Link to="/vendor/register">
-            <button type="button" className="btn btn-secondary">
-              Register
-            </button>
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+              Remember me
+            </label>
+            <Link to="/vendor/forgot-password" className="tab">
+              Forgot password?
+            </Link>
+            <Link to="/vendor/register">
+              <button type="button" className="btn btn-secondary">
+                Register
+              </button>
+            </Link>
+          </div>
         </div>
       </form>
     </div>
