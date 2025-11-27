@@ -3,11 +3,14 @@
   --brand-blue: #0ea5e9; /* sky */
   --bg-white: #ffffff;
   --muted: #6b7280;
-  --card-bg: rgba(255,255,255,0.85);
-  --glass: rgba(255,255,255,0.6);
-  --radius: 12px;
-  --shadow-1: 0 8px 24px rgba(16,24,40,0.08);
-  --transition: 250ms cubic-bezier(.2,.9,.2,1);
+  --card-bg: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.56));
+  --glass: rgba(255,255,255,0.48);
+  --glass-strong: rgba(255,255,255,0.72);
+  --glass-border: rgba(255,255,255,0.65);
+  --radius: 14px;
+  --shadow-1: 0 12px 30px rgba(2,6,23,0.08);
+  --shadow-2: 0 6px 18px rgba(2,6,23,0.06);
+  --transition: 260ms cubic-bezier(.2,.9,.2,1);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -135,7 +138,7 @@ h2{font-size:18px;color:var(--muted);margin-bottom:12px}
   text-align: center;
 }
 
-.qr-display{background:linear-gradient(180deg,rgba(255,255,255,0.9),rgba(255,255,255,0.8));padding:20px;border-radius:10px;margin:18px 0;display:flex;justify-content:center;align-items:center}
+.qr-display{background:var(--card-bg);padding:18px;border-radius:12px;margin:18px 0;display:flex;justify-content:center;align-items:center;border:1px solid var(--glass-border);backdrop-filter: blur(6px);} 
 
 .qr-display img {
   max-width: 100%;
@@ -162,7 +165,7 @@ h2{font-size:18px;color:var(--muted);margin-bottom:12px}
 
 /* cards & stats */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:14px}
-.stat-card{background:var(--bg-white);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.04);transition:transform var(--transition)}
+.stat-card{background:var(--card-bg);padding:14px;border-radius:12px;box-shadow:var(--shadow-2);border:1px solid rgba(255,255,255,0.35);backdrop-filter:blur(6px);transition:transform var(--transition)}
 .stat-card h3{font-size:13px;color:var(--muted);margin-bottom:6px}
 .stat-value{font-size:20px;color:var(--brand-blue);font-weight:700}
 
@@ -175,7 +178,7 @@ h2{font-size:18px;color:var(--muted);margin-bottom:12px}
 
 /* Scan modal */
 .scan-modal-overlay{position:fixed;inset:0;background:rgba(2,6,23,0.6);display:flex;align-items:center;justify-content:center;z-index:2000}
-.scan-modal-card{background:var(--bg-white);padding:18px;border-radius:12px;max-width:520px;width:94%;text-align:center;box-shadow:0 24px 60px rgba(2,6,23,0.12)}
+.scan-modal-card{background:var(--card-bg);padding:18px;border-radius:14px;max-width:520px;width:94%;text-align:center;box-shadow:var(--shadow-1);border:1px solid rgba(255,255,255,0.35);backdrop-filter: blur(8px) saturate(120%)}
 .scan-video{width:100%;max-width:480px;border-radius:8px;background:#000}
 .scan-hint{margin-top:8px;color:var(--muted)}
 .scan-actions{margin-top:12px}
@@ -213,14 +216,14 @@ h2{font-size:18px;color:var(--muted);margin-bottom:12px}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-.empty-state{padding:24px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.6),rgba(255,255,255,0.45));text-align:center}
+.empty-state{padding:24px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.48), rgba(255,255,255,0.36));text-align:center;border:1px solid rgba(255,255,255,0.28);backdrop-filter: blur(6px)}
 
 /* Line chart */
 .chart-container{margin-top:12px;margin-bottom:12px}
 .chart-title{font-size:13px;color:var(--muted);margin:0 0 6px}
-.line-chart{background:transparent;border-radius:8px;padding:6px}
+.line-chart{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));border-radius:10px;padding:10px}
 .chart-summary{margin-top:8px;color:var(--muted);font-size:13px}
-.chart-empty{padding:12px;color:var(--muted);background:rgba(255,255,255,0.6);border-radius:8px}
+.chart-empty{padding:12px;color:var(--muted);background:var(--card-bg);border-radius:10px;border:1px solid rgba(255,255,255,0.24);backdrop-filter:blur(6px)}
 
 /* Chart tooltip */
-.chart-tooltip{position:absolute;transform:translate(-50%,-120%);background:var(--bg-white);padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(2,6,23,0.12);font-size:13px;color:#0f172a;white-space:nowrap;pointer-events:none}
+.chart-tooltip{position:absolute;transform:translate(-50%,-120%);background:var(--glass-strong);padding:8px 10px;border-radius:8px;box-shadow:var(--shadow-1);font-size:13px;color:#0f172a;white-space:nowrap;pointer-events:none;border:1px solid rgba(255,255,255,0.36)}
