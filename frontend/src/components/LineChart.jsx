@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from "react";
 // Simple LineChart component extracted from VendorDashboard.jsx
 export default function LineChart({ transactions }) {
   // timeframe options: hours, days, weeks, months, years
-  const [timeframe, setTimeframe] = useState("days");
+  // Default to hourly view (zoomed-out hour timeframe) as requested
+  const [timeframe, setTimeframe] = useState("hours");
   const [tooltip, setTooltip] = useState({
     visible: false,
     x: 0,

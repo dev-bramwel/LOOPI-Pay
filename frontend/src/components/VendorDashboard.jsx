@@ -567,6 +567,10 @@ function VendorDashboard({ handleLogout }) {
 
       {activeTab === "dashboard" && stats && (
         <div className="dashboard-content">
+          <div className="pinned-chart glass-card" style={{ marginBottom: 12 }}>
+            <h3 style={{ margin: "0 0 8px 0" }}>Recent revenue trend</h3>
+            <LineChart transactions={transactions} />
+          </div>
           <div className="stats-grid">
             <div className="stat-card">
               <h3>Total Transactions</h3>
