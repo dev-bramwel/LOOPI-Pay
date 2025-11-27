@@ -203,7 +203,12 @@ Copy these into files named `.env` (or use `.env.local` for the frontend) and do
 
 ## License
 
-This project is an example/demo. Add a license file if you plan to reuse or publish it.
+This project is released under the MIT License — see the `LICENSE` file in the repository root for the full terms.
+
+Copyright (c) 2025 Bramwel Mutugi
+
+The MIT License is a permissive open-source license that allows reuse, modification, and distribution. Include the copyright and license
+notice in any redistributed copies or substantial portions of the Software.
 
 ## Contact
 

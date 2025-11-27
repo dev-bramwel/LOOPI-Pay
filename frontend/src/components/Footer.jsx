@@ -44,7 +44,7 @@ export default function Footer() {
         }}
       >
         <div style={{ color: "#475569" }}>
-          © {year} LOOPI++. All rights reserved.
+          © {year} LOOPI+ Bramwel Mutugi. All rights reserved.
         </div>
         <div
           style={{
