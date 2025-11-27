@@ -212,4 +212,5 @@ notice in any redistributed copies or substantial portions of the Software.
 
 ## Contact
 
-Repository maintained locally; contact the author (on the machine) for more details.
+- Email: mutugibramwel@gmail.com
+- phone: +254 796 382024
