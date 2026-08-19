@@ -10,7 +10,8 @@ function PaymentCallback() {
   const [message, setMessage] = useState("Verifying payment...");
   const shownRef = useRef(false);
   useEffect(() => {
-    const reference = searchParams.get("reference");
+    const reference =
+      searchParams.get("reference") || searchParams.get("trxref");
     let timeoutHandle = null;
 
     if (reference) {
@@ -21,18 +22,6 @@ function PaymentCallback() {
         sessionId = localStorage.getItem(`pay_ref:${reference}`);
       } catch (e) {
         // ignore storage access errors
-      }
-
-      // Fallback: try to parse the session_id out of the reference string.
-      // Reference formats may be:
-      //  - {session_id}_{payment_session.id}
-      //  - {session_id}_{payment_session.id}_{uuid}
-      // We remove the trailing `_numericId` and optional `_uuid` suffix.
-      if (!sessionId) {
-        const m = reference.match(/^(.+?)_\d+(?:_[0-9a-fA-F-]+)?$/);
-        if (m) {
-          sessionId = m[1];
-        }
       }
 
       if (!sessionId) {
