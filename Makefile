@@ -1,4 +1,4 @@
-COMPOSE ?= docker compose -f deployments/docker-compose.yml
+COMPOSE ?= docker compose --env-file .env -f deployments/docker-compose.yml
 
 .PHONY: build up down restart logs ps migrate shell test email-status db-clear flush-db clean
 
