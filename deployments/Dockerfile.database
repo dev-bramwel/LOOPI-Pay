@@ -1,0 +1,5 @@
+FROM postgres:16-alpine
+
+LABEL org.opencontainers.image.title="LOOPI Pay database"
+
+EXPOSE 5432
