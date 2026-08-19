@@ -60,10 +60,10 @@ def register_vendor(request):
     vendor.is_verified = False
     vendor.save()
 
-    # Build verification URL (include uid so verify endpoint can locate the vendor)
-    base_url = request.build_absolute_uri('/')[:-1]
+    # Link to the frontend so it can store the tokens returned by verification.
+    base_url = getattr(settings, 'FRONTEND_URL', None) or request.build_absolute_uri('/')[:-1]
     verification_uid = urlsafe_base64_encode(force_bytes(vendor.pk))
-    verification_url = f"{base_url}/api/vendors/verify-email/?token={verification_token}&uid={verification_uid}"
+    verification_url = f"{base_url.rstrip('/')}/vendor/verify?token={verification_token}&uid={verification_uid}"
 
     # Send verification email
     subject = "Verify your vendor account"
