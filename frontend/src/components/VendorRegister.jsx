@@ -15,6 +15,7 @@ function VendorRegister() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [message, setMessage] = useState(null);
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -22,6 +23,7 @@ function VendorRegister() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setMessage(null);
     if (form.password !== form.password2)
       return setError("Passwords do not match");
     setLoading(true);
@@ -43,13 +45,15 @@ function VendorRegister() {
               data.vendor || {
                 email: form.email,
                 business_name: form.business_name,
-              }
-            )
+              },
+            ),
           );
           navigate("/vendor/dashboard");
         } else {
-          // If verification required, inform user
-          navigate("/vendor/login");
+          setMessage(
+            data.message ||
+              "Registration successful. Check your email to verify your account.",
+          );
         }
       } else {
         setError(data.error || JSON.stringify(data));
@@ -68,6 +72,12 @@ function VendorRegister() {
       {error && (
         <div className="alert alert-error" style={{ marginBottom: 12 }}>
           {error}
+        </div>
+      )}
+
+      {message && (
+        <div className="alert alert-success" style={{ marginBottom: 12 }}>
+          {message}
         </div>
       )}
 

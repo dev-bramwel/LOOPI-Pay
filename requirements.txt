@@ -1,9 +1,12 @@
 Django==4.2.7
+setuptools==69.5.1
 djangorestframework==3.14.0
 djangorestframework-simplejwt
 django-cors-headers==4.3.1
 requests==2.31.0
+psycopg2-binary==2.9.9
 python-dotenv==1.0.0
 qrcode[pil]
 Pillow
 drf-yasg==1.21.6
+gunicorn

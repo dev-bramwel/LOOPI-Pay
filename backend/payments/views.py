@@ -517,6 +517,20 @@ def payment_status(request, session_id):
 
     # If not found by session_id, and a Paystack reference was provided, try other resolution strategies
     reference = request.query_params.get('reference')
+    verified_data = None
+
+    # The browser callback must not depend on Paystack's webhook reaching a
+    # local Docker environment. Verify the reference directly while pending.
+    if reference and settings.PAYSTACK_SECRET_KEY:
+        try:
+            verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+            headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+            verify_response = requests.get(verify_url, headers=headers, timeout=10)
+            if verify_response.status_code == 200:
+                verified_data = verify_response.json().get('data', {})
+        except requests.RequestException as exc:
+            logger.warning("Unable to verify callback reference %s: %s", reference, exc)
+
     if not payment_session and reference:
         # 1) Try matching stored paystack_reference
         payment_session = PaymentSession.objects.filter(paystack_reference=reference).first()
@@ -569,6 +583,26 @@ def payment_status(request, session_id):
 
     if not payment_session:
         return Response({"error": "Payment session not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if payment_session and verified_data:
+        payment_status_value = verified_data.get('status')
+        if payment_status_value == 'success':
+            payment_session.status = PaymentSession.STATUS_COMPLETED
+            payment_session.paystack_reference = reference
+            payment_session.save(update_fields=['status', 'paystack_reference', 'updated_at'])
+            try:
+                from vendors.models import Transaction
+                transaction = Transaction.objects.get(session_id=payment_session.session_id)
+                transaction.status = 'paid'
+                transaction.paid_at = timezone.now()
+                transaction.paystack_reference = reference
+                transaction.save(update_fields=['status', 'paid_at', 'paystack_reference', 'updated_at'])
+            except Transaction.DoesNotExist:
+                pass
+        elif payment_status_value in ('failed', 'abandoned'):
+            payment_session.status = PaymentSession.STATUS_FAILED
+            payment_session.paystack_reference = reference
+            payment_session.save(update_fields=['status', 'paystack_reference', 'updated_at'])
 
     # Auto-fail sessions older than configured minutes that are still pending.
     # Set `PAYMENT_AUTO_FAIL_MINUTES=0` to disable this behavior for testing.

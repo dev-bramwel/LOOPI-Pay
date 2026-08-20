@@ -106,6 +106,7 @@ dist/
 # Secrets and environment variables
 .env
 .env.*
+!.env.example
 .envrc
 secrets.toml
 credentials.json

@@ -59,7 +59,7 @@ Open the frontend dev server address printed by Vite (e.g. http://localhost:5173
 ## Environment Variables
 
 - Frontend: `VITE_API_URL`, `VITE_FRONTEND_URL` (optional) — set in `.env` files or your shell when running Vite.
-- Backend: standard Django environment variables (e.g. `DJANGO_SETTINGS_MODULE`, database config, secret key) — see `backend/.env.example` if present.
+- Backend: standard Django environment variables (e.g. `DJANGO_SETTINGS_MODULE`, database config, secret key) — see `.env.example`.
 
 ### Email / SMTP configuration (local)
 
@@ -80,6 +80,24 @@ $Env:EMAIL_HOST_PASSWORD = 'your-smtp-password'
 $Env:DEFAULT_FROM_EMAIL = 'no-reply@yourdomain.com'
 ```
 
+When running with Docker Compose, put the same values in a root `.env` file. Compose
+uses the console email backend by default, so registration emails will appear in
+`docker compose logs backend` rather than an inbox until SMTP is configured:
+
+```ini
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.sendgrid.net
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=apikey
+EMAIL_HOST_PASSWORD=your-sendgrid-api-key
+DEFAULT_FROM_EMAIL=no-reply@yourdomain.com
+```
+
+After changing `.env`, restart the backend with `make restart`. The verification
+link opens the frontend verification page, which stores the access token after
+successful verification.
+
 If you prefer to see emails in the console instead of sending them, use:
 
 ```powershell
@@ -89,7 +107,7 @@ $Env:EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 Notes:
 
 - If you use Gmail, you may need to create an App Password or enable “less secure apps” (not recommended). Prefer a transactional email provider for reliability.
-- Put these variables in `backend/.env` (git-ignored) and load them in `settings.py` via `python-dotenv` or `django-environ`.
+- For Docker Compose, keep these variables in the root `.env` file (git-ignored). For a non-Docker backend, they can be placed in `backend/.env`.
 
 ### Expose local backend with ngrok (webhooks)
 
@@ -143,7 +161,7 @@ Security tip: ngrok forwarding URLs are public — do not leak them to productio
 
 ## Example `.env` contents
 
-Below are example contents you can copy into `backend/.env` and `frontend/.env` (or `.env.local`) for local development. Keep these files out of source control.
+Below are example contents you can copy into `.env`, `backend/.env`, and `frontend/.env` (or `.env.local`) for local development. Keep these files out of source control.
 
 Backend (`backend/.env`):
 

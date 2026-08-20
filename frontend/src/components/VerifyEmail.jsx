@@ -25,7 +25,7 @@ function VerifyEmail({ setIsVendor }) {
   const verifyEmail = async (token) => {
     try {
       const response = await fetch(
-        `${API_URL}/api/vendors/verify/?token=${token}`
+        `${API_URL}/api/vendors/verify-email/?token=${encodeURIComponent(token)}`,
       );
       const data = await response.json();
 
