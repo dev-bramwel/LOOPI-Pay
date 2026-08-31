@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from django.conf import settings
 
+
 class PaymentSession(models.Model):
     """Represents a payment session initiated for a vendor or a guest.
 
@@ -32,7 +33,9 @@ class PaymentSession(models.Model):
     vendor = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True
     )
-    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    status = models.CharField(
+        max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING
+    )
     paystack_reference = models.CharField(max_length=255, blank=True)
     metadata = models.JSONField(null=True, blank=True)
 

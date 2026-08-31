@@ -35,7 +35,7 @@ def _attempt_paystack_cancel(payment_session):
     the session metadata under `cancel_attempt` for debugging.
     """
     try:
-        ref = getattr(payment_session, 'paystack_reference', None)
+        ref = getattr(payment_session, "paystack_reference", None)
         if not ref:
             return None
 
@@ -45,8 +45,8 @@ def _attempt_paystack_cancel(payment_session):
         if r.status_code != 200:
             return None
         resp = r.json()
-        auth = resp.get('data', {}).get('authorization') or {}
-        auth_code = auth.get('authorization_code')
+        auth = resp.get("data", {}).get("authorization") or {}
+        auth_code = auth.get("authorization_code")
         if not auth_code:
             # nothing to disable
             return None
@@ -60,34 +60,44 @@ def _attempt_paystack_cancel(payment_session):
             dr_data = {"status_code": dr.status_code}
 
         # persist cancel attempt info in metadata
-        meta = getattr(payment_session, 'metadata', None) or {}
-        meta['cancel_attempt'] = {
-            'time': timezone.now().isoformat(),
-            'authorization_code': auth_code,
-            'response': dr_data,
+        meta = getattr(payment_session, "metadata", None) or {}
+        meta["cancel_attempt"] = {
+            "time": timezone.now().isoformat(),
+            "authorization_code": auth_code,
+            "response": dr_data,
         }
         PaymentSession.objects.filter(pk=payment_session.pk).update(metadata=meta)
         payment_session.refresh_from_db()
-        logger.info("Attempted Paystack cancel for session %s, auth=%s, result=%s", payment_session.session_id, auth_code, dr_data)
+        logger.info(
+            "Attempted Paystack cancel for session %s, auth=%s, result=%s",
+            payment_session.session_id,
+            auth_code,
+            dr_data,
+        )
         return dr_data
     except Exception as e:
-        logger.warning("Error attempting paystack cancel for session %s: %s", getattr(payment_session, 'session_id', None), e)
+        logger.warning(
+            "Error attempting paystack cancel for session %s: %s",
+            getattr(payment_session, "session_id", None),
+            e,
+        )
         return None
 
-@api_view(['POST'])
+
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_qr_code(request):
     """
     Generate a QR code for payment and register the session
     """
-    
+
     serializer = PaymentInitiateSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    validated_data = getattr(serializer, 'validated_data', {}) or {}
-    session_id = validated_data.get('session_id')
-    amount = validated_data.get('amount')
+    validated_data = getattr(serializer, "validated_data", {}) or {}
+    session_id = validated_data.get("session_id")
+    amount = validated_data.get("amount")
 
     # Use authenticated user as vendor
     vendor_instance = request.user
@@ -99,31 +109,32 @@ def generate_qr_code(request):
     if PaymentSession.objects.filter(session_id=session_id).exists():
         return Response(
             {"error": f"Session ID '{session_id}' already exists."},
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     payment_session = PaymentSession.objects.create(
-        session_id=session_id,
-        amount=amount,
-        vendor=vendor_instance,
-        status='pending'
+        session_id=session_id, amount=amount, vendor=vendor_instance, status="pending"
     )
 
     # Create QR code payload (ensure amount is not None and convertible to float)
     try:
         amount_float = float(amount) if amount is not None else None
     except (TypeError, ValueError):
-        return Response({"error": "Invalid amount provided"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Invalid amount provided"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     if amount_float is None:
         return Response({"error": "Missing amount"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Use a frontend redirect URL so scanning the QR opens the frontend which
     # will initiate the Paystack checkout and redirect the customer.
-    frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+    frontend_base = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
     redirect_url = f"{frontend_base.rstrip('/')}/pay?session_id={session_id}"
 
-    qr = qrcode.QRCode(version=1, error_correction=ERROR_CORRECT_L, box_size=10, border=4)
+    qr = qrcode.QRCode(
+        version=1, error_correction=ERROR_CORRECT_L, box_size=10, border=4
+    )
     qr.add_data(redirect_url)
     qr.make(fit=True)
 
@@ -134,15 +145,19 @@ def generate_qr_code(request):
 
     logger.info(f"QR code generated for session: {session_id}")
 
-    return Response({
-        "session_id": session_id,
-        "amount": str(amount),
-        "vendor": vendor_instance.email,
-        "qr_code": f"data:image/png;base64,{img_str}",
-        "message": "QR code generated and session registered successfully"
-    }, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "session_id": session_id,
+            "amount": str(amount),
+            "vendor": vendor_instance.email,
+            "qr_code": f"data:image/png;base64,{img_str}",
+            "message": "QR code generated and session registered successfully",
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
-@api_view(['POST'])
+
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def initiate_payment(request):
     """
@@ -152,9 +167,9 @@ def initiate_payment(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    validated_data = getattr(serializer, 'validated_data', {}) or {}
-    session_id = validated_data.get('session_id')
-    amount = validated_data.get('amount')
+    validated_data = getattr(serializer, "validated_data", {}) or {}
+    session_id = validated_data.get("session_id")
+    amount = validated_data.get("amount")
 
     # Use authenticated user as vendor
     vendor_instance = request.user
@@ -162,11 +177,13 @@ def initiate_payment(request):
         return Response({"error": "Authenticated user is not a vendor"}, status=400)
 
     # Prevent duplicate paid sessions
-    existing_session = PaymentSession.objects.filter(session_id=session_id, status='paid').first()
+    existing_session = PaymentSession.objects.filter(
+        session_id=session_id, status="paid"
+    ).first()
     if existing_session:
         return Response(
             {"error": "This payment session has already been completed"},
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     payment_session = PaymentSession.objects.filter(session_id=session_id).first()
@@ -177,7 +194,7 @@ def initiate_payment(request):
     paystack_url = "https://api.paystack.co/transaction/initialize"
     headers = {
         "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     # Validate and convert amount to float, then to kobo/cents for Paystack
@@ -187,7 +204,9 @@ def initiate_payment(request):
     try:
         amount_float = float(amount)
     except (TypeError, ValueError):
-        return Response({"error": "Invalid amount provided"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Invalid amount provided"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     amount_cents = int(amount_float * 100)  # convert to kobo/cents
 
@@ -199,39 +218,42 @@ def initiate_payment(request):
         "metadata": {
             "session_id": session_id,
             "vendor": vendor_instance.email,
-            "payment_session_id": str(payment_session.id)
-        }
+            "payment_session_id": str(payment_session.id),
+        },
     }
 
     try:
         response = requests.post(paystack_url, json=payload, headers=headers)
         response_data = response.json()
 
-        if response.status_code == 200 and response_data.get('status'):
-            payment_session.paystack_reference = response_data['data']['reference']
+        if response.status_code == 200 and response_data.get("status"):
+            payment_session.paystack_reference = response_data["data"]["reference"]
             payment_session.save()
 
-            return Response({
-                "reference": response_data['data']['reference'],
-                "checkout_url": response_data['data']['authorization_url'],
-                "session_id": payment_session.session_id
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {
+                    "reference": response_data["data"]["reference"],
+                    "checkout_url": response_data["data"]["authorization_url"],
+                    "session_id": payment_session.session_id,
+                },
+                status=status.HTTP_200_OK,
+            )
         else:
             logger.error(f"Paystack error: {response_data}")
             return Response(
                 {"error": "Failed to initialize payment", "details": response_data},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error: {str(e)}")
         return Response(
             {"error": "Failed to connect to payment gateway"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([AllowAny])
 def initiate_payment_public(request):
     """
@@ -240,7 +262,7 @@ def initiate_payment_public(request):
     vendor and amount, initializes a Paystack transaction and returns the
     `checkout_url` and `reference`.
     """
-    session_id = request.query_params.get('session_id')
+    session_id = request.query_params.get("session_id")
     if not session_id:
         return Response({"error": "Missing session_id"}, status=400)
 
@@ -253,15 +275,17 @@ def initiate_payment_public(request):
     amount = payment_session.amount
 
     # Ensure vendor and vendor email exist to avoid attribute access on None
-    vendor_email = getattr(vendor_instance, 'email', None)
+    vendor_email = getattr(vendor_instance, "email", None)
     if not vendor_email:
-        return Response({"error": "Vendor not associated with payment session"}, status=400)
+        return Response(
+            {"error": "Vendor not associated with payment session"}, status=400
+        )
 
     # Prepare Paystack init (same logic as authenticated initiate)
     paystack_url = "https://api.paystack.co/transaction/initialize"
     headers = {
         "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     try:
         amount_float = float(amount)
@@ -279,20 +303,32 @@ def initiate_payment_public(request):
         if existing_ref:
             # try verify
             try:
-                verify_url = f"https://api.paystack.co/transaction/verify/{existing_ref}"
-                vr = requests.get(verify_url, headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}, timeout=5)
+                verify_url = (
+                    f"https://api.paystack.co/transaction/verify/{existing_ref}"
+                )
+                vr = requests.get(
+                    verify_url,
+                    headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
+                    timeout=5,
+                )
                 if vr.status_code == 200:
                     vdata = vr.json()
-                    if vdata.get('status') and vdata.get('data', {}).get('status') in ('pending', 'success'):
+                    if vdata.get("status") and vdata.get("data", {}).get("status") in (
+                        "pending",
+                        "success",
+                    ):
                         # reuse previous authorization_url if available in metadata
-                        meta = getattr(payment_session, 'metadata', None) or {}
-                        auth_url = meta.get('authorization_url')
+                        meta = getattr(payment_session, "metadata", None) or {}
+                        auth_url = meta.get("authorization_url")
                         if auth_url:
-                            return Response({
-                                "reference": existing_ref,
-                                "checkout_url": auth_url,
-                                "session_id": payment_session.session_id
-                            }, status=status.HTTP_200_OK)
+                            return Response(
+                                {
+                                    "reference": existing_ref,
+                                    "checkout_url": auth_url,
+                                    "session_id": payment_session.session_id,
+                                },
+                                status=status.HTTP_200_OK,
+                            )
             except requests.RequestException:
                 # network issues verifying - fall through and attempt to init anew
                 pass
@@ -308,58 +344,76 @@ def initiate_payment_public(request):
             "metadata": {
                 "session_id": session_id,
                 "vendor": vendor_email,
-                "payment_session_id": str(payment_session.id)
-            }
+                "payment_session_id": str(payment_session.id),
+            },
         }
 
         response = requests.post(paystack_url, json=payload, headers=headers)
         response_data = response.json()
 
         # Handle duplicate_reference by retrying with a new random suffix once
-        if response.status_code != 200 or not response_data.get('status'):
+        if response.status_code != 200 or not response_data.get("status"):
             # If validation error duplicate_reference, try again once
-            err_code = response_data.get('code') or response_data.get('data', {}).get('code')
-            if err_code == 'duplicate_reference' or ('Duplicate Transaction Reference' in str(response_data.get('message', ''))):
+            err_code = response_data.get("code") or response_data.get("data", {}).get(
+                "code"
+            )
+            if err_code == "duplicate_reference" or (
+                "Duplicate Transaction Reference"
+                in str(response_data.get("message", ""))
+            ):
                 unique_ref = f"{session_id}_{payment_session.id}_{uuid4().hex[:8]}"
-                payload['reference'] = unique_ref
+                payload["reference"] = unique_ref
                 response = requests.post(paystack_url, json=payload, headers=headers)
                 response_data = response.json()
 
-        if response.status_code == 200 and response_data.get('status'):
-            ref = response_data['data']['reference']
-            auth_url = response_data['data'].get('authorization_url')
+        if response.status_code == 200 and response_data.get("status"):
+            ref = response_data["data"]["reference"]
+            auth_url = response_data["data"].get("authorization_url")
             payment_session.paystack_reference = ref
             # persist authorization_url in metadata for reuse
-            meta = getattr(payment_session, 'metadata', None) or {}
-            meta['authorization_url'] = auth_url
+            meta = getattr(payment_session, "metadata", None) or {}
+            meta["authorization_url"] = auth_url
             # Use QuerySet.update to avoid descriptor/type issues when assigning directly
-            PaymentSession.objects.filter(pk=payment_session.pk).update(paystack_reference=ref, metadata=meta)
+            PaymentSession.objects.filter(pk=payment_session.pk).update(
+                paystack_reference=ref, metadata=meta
+            )
             payment_session.refresh_from_db()
 
-            return Response({
-                "reference": ref,
-                "checkout_url": auth_url,
-                "session_id": payment_session.session_id
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {
+                    "reference": ref,
+                    "checkout_url": auth_url,
+                    "session_id": payment_session.session_id,
+                },
+                status=status.HTTP_200_OK,
+            )
         else:
             logger.error(f"Paystack error (public init): {response_data}")
-            return Response({"error": "Failed to initialize payment", "details": response_data}, status=500)
+            return Response(
+                {"error": "Failed to initialize payment", "details": response_data},
+                status=500,
+            )
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error (public init): {str(e)}")
         return Response({"error": "Failed to connect to payment gateway"}, status=500)
 
+
 @csrf_exempt
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def paystack_webhook(request):
     """
     Handle Paystack webhook events
     """
     # log incoming requests
-    logger.info("Webhook received. Headers=%s Body=%s", dict(request.headers), request.body.decode())
+    logger.info(
+        "Webhook received. Headers=%s Body=%s",
+        dict(request.headers),
+        request.body.decode(),
+    )
 
     # Verify webhook signature
-    paystack_signature = request.META.get('HTTP_X_PAYSTACK_SIGNATURE')
+    paystack_signature = request.META.get("HTTP_X_PAYSTACK_SIGNATURE")
 
     if not paystack_signature:
         logger.warning("Webhook received without signature")
@@ -368,15 +422,13 @@ def paystack_webhook(request):
     # Compute HMAC signature
     body = request.body
     hash_object = hmac.new(
-        settings.PAYSTACK_SECRET_KEY.encode('utf-8'),
-        body,
-        hashlib.sha512
+        settings.PAYSTACK_SECRET_KEY.encode("utf-8"), body, hashlib.sha512
     )
     expected_signature = hash_object.hexdigest()
 
     if not hmac.compare_digest(expected_signature, paystack_signature):
         # Log more context to help debugging signature issues (do NOT log secret)
-        body_snip = request.body.decode('utf-8', errors='replace')[:1000]
+        body_snip = request.body.decode("utf-8", errors="replace")[:1000]
         logger.warning(
             "Invalid webhook signature. Received=%s; Headers=%s; Body(start)=%s",
             paystack_signature,
@@ -387,14 +439,14 @@ def paystack_webhook(request):
 
     # Parse event data
     try:
-        event = json.loads(body.decode('utf-8'))
+        event = json.loads(body.decode("utf-8"))
     except json.JSONDecodeError:
         logger.error("Invalid JSON in webhook")
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    event_type = event.get('event')
-    data = event.get('data', {})
-    reference = data.get('reference')
+    event_type = event.get("event")
+    data = event.get("data", {})
+    reference = data.get("reference")
 
     # Create an audit record for this webhook (payload and headers)
     try:
@@ -419,17 +471,26 @@ def paystack_webhook(request):
         return JsonResponse({"error": "Missing reference"}, status=400)
 
     # Find payment session by reference
-    payment_session = PaymentSession.objects.filter(paystack_reference=reference).first()
+    payment_session = PaymentSession.objects.filter(
+        paystack_reference=reference
+    ).first()
 
     # Fallback: if not found by reference, try mapping via metadata.session_id
     if not payment_session:
-        logger.info("No PaymentSession matched by paystack_reference=%s, attempting metadata lookup", reference)
-        md = data.get('metadata', {}) or {}
-        sid = md.get('session_id')
+        logger.info(
+            "No PaymentSession matched by paystack_reference=%s, attempting metadata lookup",
+            reference,
+        )
+        md = data.get("metadata", {}) or {}
+        sid = md.get("session_id")
         if sid:
             payment_session = PaymentSession.objects.filter(session_id=sid).first()
             if payment_session:
-                logger.info("Resolved PaymentSession by metadata.session_id=%s -> %s", sid, payment_session.pk)
+                logger.info(
+                    "Resolved PaymentSession by metadata.session_id=%s -> %s",
+                    sid,
+                    payment_session.pk,
+                )
 
     # Last-resort: verify the reference with Paystack and try to extract metadata.session_id
     if not payment_session:
@@ -439,14 +500,22 @@ def paystack_webhook(request):
             vr = requests.get(verify_url, headers=headers, timeout=8)
             if vr.status_code == 200:
                 vdata = vr.json()
-                vmd = vdata.get('data', {}).get('metadata', {}) or {}
-                vsid = vmd.get('session_id')
+                vmd = vdata.get("data", {}).get("metadata", {}) or {}
+                vsid = vmd.get("session_id")
                 if vsid:
-                    payment_session = PaymentSession.objects.filter(session_id=vsid).first()
+                    payment_session = PaymentSession.objects.filter(
+                        session_id=vsid
+                    ).first()
                     if payment_session:
-                        logger.info("Resolved PaymentSession by Paystack verify metadata.session_id=%s -> %s", vsid, payment_session.pk)
+                        logger.info(
+                            "Resolved PaymentSession by Paystack verify metadata.session_id=%s -> %s",
+                            vsid,
+                            payment_session.pk,
+                        )
         except requests.RequestException as e:
-            logger.warning("Error verifying reference with Paystack while resolving session: %s", e)
+            logger.warning(
+                "Error verifying reference with Paystack while resolving session: %s", e
+            )
 
     if not payment_session:
         logger.warning(f"Payment session not found for reference: {reference}")
@@ -457,36 +526,45 @@ def paystack_webhook(request):
 
     # If this session was auto-failed by the app (customer timed out), ignore
     # incoming webhook events for it to avoid flipping state after cancellation.
-    meta = getattr(payment_session, 'metadata', None) or {}
-    if meta.get('auto_failed') or payment_session.status == PaymentSession.STATUS_FAILED:
-        logger.info(f"Ignoring webhook for auto-failed session: {payment_session.session_id}")
-        return JsonResponse({"status": "ignored", "reason": "session auto-failed"}, status=200)
+    meta = getattr(payment_session, "metadata", None) or {}
+    if (
+        meta.get("auto_failed")
+        or payment_session.status == PaymentSession.STATUS_FAILED
+    ):
+        logger.info(
+            f"Ignoring webhook for auto-failed session: {payment_session.session_id}"
+        )
+        return JsonResponse(
+            {"status": "ignored", "reason": "session auto-failed"}, status=200
+        )
 
     # Update payment status based on event type
-    if event_type == 'charge.success':
+    if event_type == "charge.success":
         payment_session.status = PaymentSession.STATUS_COMPLETED
         logger.info(f"Payment successful for session: {payment_session.session_id}")
 
         # Also update vendor transaction if exists
         from vendors.models import Transaction
+
         try:
             transaction = Transaction.objects.get(session_id=payment_session.session_id)
-            transaction.status = 'paid'
+            transaction.status = "paid"
             transaction.paid_at = timezone.now()
             transaction.paystack_reference = reference
             transaction.save()
         except Transaction.DoesNotExist:
             pass
 
-    elif event_type == 'charge.failed':
-        payment_session.status = 'failed'
+    elif event_type == "charge.failed":
+        payment_session.status = "failed"
         logger.info(f"Payment failed for session: {payment_session.session_id}")
 
         # Also update vendor transaction if exists
         from vendors.models import Transaction
+
         try:
             transaction = Transaction.objects.get(session_id=payment_session.session_id)
-            transaction.status = 'failed'
+            transaction.status = "failed"
             transaction.save()
         except Transaction.DoesNotExist:
             pass
@@ -495,7 +573,9 @@ def paystack_webhook(request):
 
     if audit:
         audit.processed = True
-        audit.result = f"processed:event={event_type},session={payment_session.session_id}"
+        audit.result = (
+            f"processed:event={event_type},session={payment_session.session_id}"
+        )
         try:
             audit.save()
         except Exception as e:
@@ -503,7 +583,8 @@ def paystack_webhook(request):
 
     return JsonResponse({"status": "success"}, status=200)
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 @permission_classes([AllowAny])
 def payment_status(request, session_id):
     """
@@ -516,7 +597,7 @@ def payment_status(request, session_id):
         payment_session = None
 
     # If not found by session_id, and a Paystack reference was provided, try other resolution strategies
-    reference = request.query_params.get('reference')
+    reference = request.query_params.get("reference")
     verified_data = None
 
     # The browser callback must not depend on Paystack's webhook reaching a
@@ -527,13 +608,15 @@ def payment_status(request, session_id):
             headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
             verify_response = requests.get(verify_url, headers=headers, timeout=10)
             if verify_response.status_code == 200:
-                verified_data = verify_response.json().get('data', {})
+                verified_data = verify_response.json().get("data", {})
         except requests.RequestException as exc:
             logger.warning("Unable to verify callback reference %s: %s", reference, exc)
 
     if not payment_session and reference:
         # 1) Try matching stored paystack_reference
-        payment_session = PaymentSession.objects.filter(paystack_reference=reference).first()
+        payment_session = PaymentSession.objects.filter(
+            paystack_reference=reference
+        ).first()
 
         # 2) If still not found, verify the reference with Paystack and try to map via metadata
         if not payment_session:
@@ -543,35 +626,49 @@ def payment_status(request, session_id):
                 r = requests.get(verify_url, headers=headers, timeout=10)
                 if r.status_code == 200:
                     resp = r.json()
-                    if resp.get('status'):
-                        md = resp.get('data', {}).get('metadata', {}) or {}
-                        sid = md.get('session_id')
+                    if resp.get("status"):
+                        md = resp.get("data", {}).get("metadata", {}) or {}
+                        sid = md.get("session_id")
                         if sid:
-                            payment_session = PaymentSession.objects.filter(session_id=sid).first()
+                            payment_session = PaymentSession.objects.filter(
+                                session_id=sid
+                            ).first()
                         else:
-                            vendor_email = md.get('vendor') or resp.get('data', {}).get('customer', {}).get('email')
+                            vendor_email = md.get("vendor") or resp.get("data", {}).get(
+                                "customer", {}
+                            ).get("email")
                             if vendor_email:
                                 # Paystack amount is in kobo/cents
                                 try:
-                                    amount_val = resp.get('data', {}).get('amount', 0)
+                                    amount_val = resp.get("data", {}).get("amount", 0)
                                     amt = amount_val / 100
                                 except Exception:
                                     amt = None
                                 if amt is not None:
-                                    payment_session = PaymentSession.objects.filter(vendor__email=vendor_email, amount=amt).first()
+                                    payment_session = PaymentSession.objects.filter(
+                                        vendor__email=vendor_email, amount=amt
+                                    ).first()
 
                         # If verification shows success, update session and transaction
-                        if payment_session and resp.get('data', {}).get('status') == 'success':
+                        if (
+                            payment_session
+                            and resp.get("data", {}).get("status") == "success"
+                        ):
                             payment_session.status = PaymentSession.STATUS_COMPLETED
                             payment_session.paystack_reference = reference
                             payment_session.save()
                             try:
                                 from vendors.models import Transaction
+
                                 try:
-                                    transaction = Transaction.objects.get(session_id=payment_session.session_id)
+                                    transaction = Transaction.objects.get(
+                                        session_id=payment_session.session_id
+                                    )
                                 except Transaction.DoesNotExist:
-                                    transaction = Transaction.objects.get(session_id=str(payment_session.id))
-                                transaction.status = 'paid'
+                                    transaction = Transaction.objects.get(
+                                        session_id=str(payment_session.id)
+                                    )
+                                transaction.status = "paid"
                                 transaction.paid_at = timezone.now()
                                 transaction.paystack_reference = reference
                                 transaction.save()
@@ -582,52 +679,79 @@ def payment_status(request, session_id):
                 pass
 
     if not payment_session:
-        return Response({"error": "Payment session not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"error": "Payment session not found"}, status=status.HTTP_404_NOT_FOUND
+        )
 
     if payment_session and verified_data:
-        payment_status_value = verified_data.get('status')
-        if payment_status_value == 'success':
+        payment_status_value = verified_data.get("status")
+        if payment_status_value == "success":
             payment_session.status = PaymentSession.STATUS_COMPLETED
             payment_session.paystack_reference = reference
-            payment_session.save(update_fields=['status', 'paystack_reference', 'updated_at'])
+            payment_session.save(
+                update_fields=["status", "paystack_reference", "updated_at"]
+            )
             try:
                 from vendors.models import Transaction
-                transaction = Transaction.objects.get(session_id=payment_session.session_id)
-                transaction.status = 'paid'
+
+                transaction = Transaction.objects.get(
+                    session_id=payment_session.session_id
+                )
+                transaction.status = "paid"
                 transaction.paid_at = timezone.now()
                 transaction.paystack_reference = reference
-                transaction.save(update_fields=['status', 'paid_at', 'paystack_reference', 'updated_at'])
+                transaction.save(
+                    update_fields=[
+                        "status",
+                        "paid_at",
+                        "paystack_reference",
+                        "updated_at",
+                    ]
+                )
             except Transaction.DoesNotExist:
                 pass
-        elif payment_status_value in ('failed', 'abandoned'):
+        elif payment_status_value in ("failed", "abandoned"):
             payment_session.status = PaymentSession.STATUS_FAILED
             payment_session.paystack_reference = reference
-            payment_session.save(update_fields=['status', 'paystack_reference', 'updated_at'])
+            payment_session.save(
+                update_fields=["status", "paystack_reference", "updated_at"]
+            )
 
     # Auto-fail sessions older than configured minutes that are still pending.
     # Set `PAYMENT_AUTO_FAIL_MINUTES=0` to disable this behavior for testing.
-    auto_fail_minutes = getattr(settings, 'PAYMENT_AUTO_FAIL_MINUTES', 0)
-    if payment_session.status == PaymentSession.STATUS_PENDING and auto_fail_minutes and auto_fail_minutes > 0:
+    auto_fail_minutes = getattr(settings, "PAYMENT_AUTO_FAIL_MINUTES", 0)
+    if (
+        payment_session.status == PaymentSession.STATUS_PENDING
+        and auto_fail_minutes
+        and auto_fail_minutes > 0
+    ):
         age = timezone.now() - payment_session.created_at
         if age > timedelta(minutes=auto_fail_minutes):
             # Mark session failed due to timeout and record the auto-fail
-            meta = getattr(payment_session, 'metadata', None) or {}
-            meta['auto_failed'] = True
+            meta = getattr(payment_session, "metadata", None) or {}
+            meta["auto_failed"] = True
             # persist using update to avoid field type issues
-            PaymentSession.objects.filter(pk=payment_session.pk).update(status=PaymentSession.STATUS_FAILED, metadata=meta)
+            PaymentSession.objects.filter(pk=payment_session.pk).update(
+                status=PaymentSession.STATUS_FAILED, metadata=meta
+            )
             payment_session.refresh_from_db()
 
             # Also update vendor Transaction if it exists
             try:
                 from vendors.models import Transaction
+
                 # try matching by session_id string first
                 try:
-                    transaction = Transaction.objects.get(session_id=payment_session.session_id)
+                    transaction = Transaction.objects.get(
+                        session_id=payment_session.session_id
+                    )
                 except Transaction.DoesNotExist:
                     # fallback: some code may have stored PaymentSession.id in transaction.session_id
-                    transaction = Transaction.objects.get(session_id=str(payment_session.id))
+                    transaction = Transaction.objects.get(
+                        session_id=str(payment_session.id)
+                    )
 
-                transaction.status = 'failed'
+                transaction.status = "failed"
                 transaction.save()
             except Exception:
                 # no transaction found or other error - ignore silently
@@ -639,18 +763,23 @@ def payment_status(request, session_id):
                 pass
 
     # Add a hint header to let clients stop polling immediately when session is final
-    resp = Response({
-        "session_id": payment_session.session_id,
-        "status": payment_session.status,
-        "amount": str(payment_session.amount),
-        "vendor": payment_session.vendor.email if payment_session.vendor else None
-    })
-    if payment_session.status in (PaymentSession.STATUS_COMPLETED, PaymentSession.STATUS_FAILED):
-        resp['X-Payment-Final'] = '1'
+    resp = Response(
+        {
+            "session_id": payment_session.session_id,
+            "status": payment_session.status,
+            "amount": str(payment_session.amount),
+            "vendor": payment_session.vendor.email if payment_session.vendor else None,
+        }
+    )
+    if payment_session.status in (
+        PaymentSession.STATUS_COMPLETED,
+        PaymentSession.STATUS_FAILED,
+    ):
+        resp["X-Payment-Final"] = "1"
     return resp
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def cancel_payment(request):
     """
@@ -659,40 +788,56 @@ def cancel_payment(request):
     session (or staff) may cancel.
     Expects JSON body: { "session_id": "..." }
     """
-    data = getattr(request, 'data', {}) or {}
-    session_id = data.get('session_id')
+    data = getattr(request, "data", {}) or {}
+    session_id = data.get("session_id")
     if not session_id:
-        return Response({"error": "Missing session_id"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Missing session_id"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     try:
         payment_session = PaymentSession.objects.get(session_id=session_id)
     except PaymentSession.DoesNotExist:
-        return Response({"error": "Payment session not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"error": "Payment session not found"}, status=status.HTTP_404_NOT_FOUND
+        )
 
     # Only the owning vendor (or staff) can cancel
     user = request.user
-    if not (user.is_staff or (payment_session.vendor and payment_session.vendor == user)):
-        return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
+    if not (
+        user.is_staff or (payment_session.vendor and payment_session.vendor == user)
+    ):
+        return Response(
+            {"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN
+        )
 
     # If already completed, do not cancel
     if payment_session.status == PaymentSession.STATUS_COMPLETED:
-        return Response({"error": "Cannot cancel a completed payment"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Cannot cancel a completed payment"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # Mark as failed and flag auto_failed
-    meta = getattr(payment_session, 'metadata', None) or {}
-    meta['auto_failed'] = True
-    PaymentSession.objects.filter(pk=payment_session.pk).update(status=PaymentSession.STATUS_FAILED, metadata=meta)
+    meta = getattr(payment_session, "metadata", None) or {}
+    meta["auto_failed"] = True
+    PaymentSession.objects.filter(pk=payment_session.pk).update(
+        status=PaymentSession.STATUS_FAILED, metadata=meta
+    )
     payment_session.refresh_from_db()
 
     # update vendor Transaction if present
     try:
         from vendors.models import Transaction
+
         try:
             transaction = Transaction.objects.get(session_id=payment_session.session_id)
         except Transaction.DoesNotExist:
-            transaction = Transaction.objects.filter(session_id=str(payment_session.id)).first()
+            transaction = Transaction.objects.filter(
+                session_id=str(payment_session.id)
+            ).first()
         if transaction:
-            transaction.status = 'failed'
+            transaction.status = "failed"
             transaction.save()
     except Exception:
         # ignore errors updating transactions
@@ -710,22 +855,26 @@ def cancel_payment(request):
 @permission_classes([IsAdminUser])
 def webhook_audit_list(request):
     """List webhook audits for staff users. Supports ?processed=true|false and simple search by reference/event."""
-    qs = WebhookAudit.objects.all().order_by('-received_at')
-    processed = request.query_params.get('processed')
+    qs = WebhookAudit.objects.all().order_by("-received_at")
+    processed = request.query_params.get("processed")
     if processed is not None:
-        if processed.lower() in ('1', 'true', 'yes'):
+        if processed.lower() in ("1", "true", "yes"):
             qs = qs.filter(processed=True)
-        elif processed.lower() in ('0', 'false', 'no'):
+        elif processed.lower() in ("0", "false", "no"):
             qs = qs.filter(processed=False)
 
-    q = request.query_params.get('q')
+    q = request.query_params.get("q")
     if q:
-        qs = qs.filter(models.Q(reference__icontains=q) | models.Q(event__icontains=q) | models.Q(result__icontains=q))
+        qs = qs.filter(
+            models.Q(reference__icontains=q)
+            | models.Q(event__icontains=q)
+            | models.Q(result__icontains=q)
+        )
 
     # simple pagination
     try:
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 50))
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 50))
     except Exception:
         page = 1
         page_size = 50
@@ -735,12 +884,14 @@ def webhook_audit_list(request):
     total = qs.count()
     items = qs[start:end]
     serializer = WebhookAuditSerializer(items, many=True)
-    return Response({
-        'count': total,
-        'page': page,
-        'page_size': page_size,
-        'results': serializer.data,
-    })
+    return Response(
+        {
+            "count": total,
+            "page": page,
+            "page_size": page_size,
+            "results": serializer.data,
+        }
+    )
 
 
 @api_view(["GET"])
@@ -748,7 +899,7 @@ def webhook_audit_list(request):
 def webhook_audit_detail(request, pk):
     wa = WebhookAudit.objects.filter(pk=pk).first()
     if not wa:
-        return Response({'error': 'Not found'}, status=404)
+        return Response({"error": "Not found"}, status=404)
     serializer = WebhookAuditSerializer(wa)
     return Response(serializer.data)
 
@@ -759,14 +910,14 @@ def webhook_audit_reprocess(request, pk):
     """Re-run processing for a single WebhookAudit (mirrors admin action)."""
     wa = WebhookAudit.objects.filter(pk=pk).first()
     if not wa:
-        return Response({'error': 'Not found'}, status=404)
+        return Response({"error": "Not found"}, status=404)
 
     processed = 0
     try:
         payload = wa.payload or {}
-        event_type = payload.get('event')
-        data = payload.get('data', {})
-        reference = data.get('reference') or wa.reference
+        event_type = payload.get("event")
+        data = payload.get("data", {})
+        reference = data.get("reference") or wa.reference
 
         # Try to resolve PaymentSession by reference
         ps = None
@@ -775,8 +926,8 @@ def webhook_audit_reprocess(request, pk):
 
         # Fallback: try metadata.session_id from payload
         if not ps:
-            md = data.get('metadata', {}) or {}
-            sid = md.get('session_id')
+            md = data.get("metadata", {}) or {}
+            sid = md.get("session_id")
             if sid:
                 ps = PaymentSession.objects.filter(session_id=sid).first()
 
@@ -784,37 +935,39 @@ def webhook_audit_reprocess(request, pk):
             ps = PaymentSession.objects.filter(paystack_reference=wa.reference).first()
 
         if not ps:
-            wa.result = 'reprocess:session_not_found'
+            wa.result = "reprocess:session_not_found"
             wa.processed = False
             wa.save()
-            return Response({'status': 'session_not_found'}, status=200)
+            return Response({"status": "session_not_found"}, status=200)
 
         # Ignore if session already failed due to auto-fail
-        meta = getattr(ps, 'metadata', {}) or {}
-        if meta.get('auto_failed') or ps.status == PaymentSession.STATUS_FAILED:
+        meta = getattr(ps, "metadata", {}) or {}
+        if meta.get("auto_failed") or ps.status == PaymentSession.STATUS_FAILED:
             wa.result = f"reprocess:ignored_auto_failed:{ps.session_id}"
             wa.processed = True
             wa.save()
-            return Response({'status': 'ignored_auto_failed'}, status=200)
+            return Response({"status": "ignored_auto_failed"}, status=200)
 
         # Apply event semantics
-        if event_type == 'charge.success':
+        if event_type == "charge.success":
             ps.status = PaymentSession.STATUS_COMPLETED
             try:
                 from vendors.models import Transaction
+
                 tx = Transaction.objects.get(session_id=ps.session_id)
-                tx.status = 'paid'
+                tx.status = "paid"
                 tx.paid_at = timezone.now()
                 tx.paystack_reference = reference or tx.paystack_reference
                 tx.save()
             except Exception:
                 pass
-        elif event_type == 'charge.failed':
+        elif event_type == "charge.failed":
             ps.status = PaymentSession.STATUS_FAILED
             try:
                 from vendors.models import Transaction
+
                 tx = Transaction.objects.get(session_id=ps.session_id)
-                tx.status = 'failed'
+                tx.status = "failed"
                 tx.save()
             except Exception:
                 pass
@@ -828,8 +981,11 @@ def webhook_audit_reprocess(request, pk):
         wa.result = f"reprocess_error:{str(e)[:200]}"
         wa.processed = False
         wa.save()
-        return Response({'status': 'error', 'detail': str(e)}, status=500)
+        return Response({"status": "error", "detail": str(e)}, status=500)
 
-    return Response({'status': 'ok', 'processed': processed})
+    return Response({"status": "ok", "processed": processed})
 
-    return Response({"status": "cancelled", "session_id": payment_session.session_id}, status=status.HTTP_200_OK)
+    return Response(
+        {"status": "cancelled", "session_id": payment_session.session_id},
+        status=status.HTTP_200_OK,
+    )

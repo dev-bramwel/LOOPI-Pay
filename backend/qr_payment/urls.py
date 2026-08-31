@@ -28,25 +28,31 @@ from payments import views as payments_views
 schema_view = get_schema_view(
     openapi.Info(
         title="LOOPI++ QR Payment API",
-        default_version='v1',
+        default_version="v1",
         description="API documentation for the QR payment backend",
     ),
     public=True,
-    permission_classes=(permissions.AllowAny,)
+    permission_classes=(permissions.AllowAny,),
 )
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path('api/payments/', include('payments.urls')),
+    path("api/payments/", include("payments.urls")),
     # Accept older/alternate webhook path used in some Paystack dashboard configs
-    path('api/paystack/webhook', payments_views.paystack_webhook),
-    path('api/vendors/', include('vendors.urls')),
-
+    path("api/paystack/webhook", payments_views.paystack_webhook),
+    path("api/vendors/", include("vendors.urls")),
     # Landing
-    path('', home, name='home'),
-
+    path("", home, name="home"),
     # Swagger / OpenAPI
-    re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    re_path(
+        r"^swagger(?P<format>\.json|\.yaml)$",
+        schema_view.without_ui(cache_timeout=0),
+        name="schema-json",
+    ),
+    path(
+        "swagger/",
+        schema_view.with_ui("swagger", cache_timeout=0),
+        name="schema-swagger-ui",
+    ),
+    path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
 ]
