@@ -6,7 +6,7 @@ import requests
 from datetime import datetime
 from qrcode.constants import ERROR_CORRECT_L
 
-def register_session_in_backend(session_id, amount, vendor, backend_url="http://127.0.0.1:8000"):
+def register_session_in_backend(session_id, amount, vendor, backend_url="http://localhost"):
     """
     Pre-register the payment session in Django backend
     """
@@ -43,7 +43,7 @@ def register_session_in_backend(session_id, amount, vendor, backend_url="http://
         print(f"❌ Error registering session: {str(e)}")
         return False
 
-def generate_payment_qr(session_id, amount, vendor, output_dir="qr_codes", backend_url="http://127.0.0.1:8000", skip_backend=False):
+def generate_payment_qr(session_id, amount, vendor, output_dir="qr_codes", backend_url="http://localhost", skip_backend=False):
     """
     Generate a QR code for payment with timestamp and session ID in filename
     Also pre-register the session in Django backend
