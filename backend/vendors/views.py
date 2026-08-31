@@ -26,7 +26,7 @@ from .serializers import (
     VendorRegistrationSerializer,
     VendorSerializer,
     TransactionSerializer,
-    InitiateTransactionSerializer
+    InitiateTransactionSerializer,
 )
 from payments.models import PaymentSession
 import logging
@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
-@api_view(['POST'])
+
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def register_vendor(request):
     serializer = VendorRegistrationSerializer(data=request.data)
@@ -52,7 +53,10 @@ def register_vendor(request):
         vendor = saved
 
     if vendor is None:
-        return Response({'error': 'Failed to create vendor'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "Failed to create vendor"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     # Create verification token
     verification_token = secrets.token_urlsafe(32)
@@ -61,7 +65,9 @@ def register_vendor(request):
     vendor.save()
 
     # Link to the frontend so it can store the tokens returned by verification.
-    base_url = getattr(settings, 'FRONTEND_URL', None) or request.build_absolute_uri('/')[:-1]
+    base_url = (
+        getattr(settings, "FRONTEND_URL", None) or request.build_absolute_uri("/")[:-1]
+    )
     verification_uid = urlsafe_base64_encode(force_bytes(vendor.pk))
     verification_url = f"{base_url.rstrip('/')}/vendor/verify?token={verification_token}&uid={verification_uid}"
 
@@ -71,16 +77,19 @@ def register_vendor(request):
     send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [vendor.email])
 
     # Do NOT issue tokens at registration time — require email verification first.
-    return Response({
-        "message": "Vendor registered successfully. Please check your email to verify your account.",
-        "vendor": VendorSerializer(vendor).data
-    }, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "message": "Vendor registered successfully. Please check your email to verify your account.",
+            "vendor": VendorSerializer(vendor).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([AllowAny])
 def verify_email(request):
-    token = request.GET.get('token')
+    token = request.GET.get("token")
 
     if not token:
         return Response({"error": "Token missing"}, status=400)
@@ -97,44 +106,50 @@ def verify_email(request):
     # Issue tokens on successful verification so the user can be logged in automatically
     refresh = RefreshToken.for_user(vendor)
 
-    return Response({
-        "message": "Email verified successfully!",
-        "vendor": VendorSerializer(vendor).data,
-        "tokens": {
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
+    return Response(
+        {
+            "message": "Email verified successfully!",
+            "vendor": VendorSerializer(vendor).data,
+            "tokens": {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            },
         }
-    })
+    )
 
-@api_view(['POST'])
+
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def login_vendor(request):
-    email = request.data.get('email')
-    password = request.data.get('password')
+    email = request.data.get("email")
+    password = request.data.get("password")
 
     if not email or not password:
-        return Response({'error': 'Email and password are required'}, status=400)
+        return Response({"error": "Email and password are required"}, status=400)
 
     # authenticate using the project's USERNAME_FIELD (your Vendor model uses email)
     user = authenticate(username=email, password=password)
 
     if user is None:
-        return Response({'error': 'Invalid credentials'}, status=401)
+        return Response({"error": "Invalid credentials"}, status=401)
 
-    if not getattr(user, 'is_verified', False):
-        return Response({'error': 'Please verify your email'}, status=403)
+    if not getattr(user, "is_verified", False):
+        return Response({"error": "Please verify your email"}, status=403)
 
     refresh = RefreshToken.for_user(user)
-    return Response({
-        'message': 'Login successful',
-        'vendor': VendorSerializer(user).data,
-        'tokens': {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
+    return Response(
+        {
+            "message": "Login successful",
+            "vendor": VendorSerializer(user).data,
+            "tokens": {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            },
         }
-    })
+    )
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def vendor_profile(request):
     """
@@ -143,7 +158,8 @@ def vendor_profile(request):
     vendor = request.user
     return Response(VendorSerializer(vendor).data)
 
-@api_view(['PUT'])
+
+@api_view(["PUT"])
 @permission_classes([IsAuthenticated])
 def update_vendor_profile(request):
     """
@@ -158,7 +174,8 @@ def update_vendor_profile(request):
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['POST'])
+
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def initiate_transaction(request):
     """
@@ -168,10 +185,12 @@ def initiate_transaction(request):
     serializer.is_valid(raise_exception=True)
 
     vendor = request.user
-    validated_data = getattr(serializer, 'validated_data', {}) or {}
-    amount = validated_data.get('amount')
+    validated_data = getattr(serializer, "validated_data", {}) or {}
+    amount = validated_data.get("amount")
     if amount is None:
-        return Response({'error': 'Amount is required'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     # Generate unique session_id using timestamp and vendor email
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -182,20 +201,19 @@ def initiate_transaction(request):
         vendor=vendor,
         session_id=session_id,
         amount=amount,
-        status='pending',
-        qr_generated=True
+        status="pending",
+        qr_generated=True,
     )
 
     # Create payment session (for compatibility with existing payment flow)
     payment_session = PaymentSession.objects.create(
-        session_id=session_id,
-        amount=amount,
-        vendor=vendor,
-        status='pending'
+        session_id=session_id, amount=amount, vendor=vendor, status="pending"
     )
 
     # Generate QR code payload that redirects to frontend /pay route
-    frontend_base = getattr(settings, 'FRONTEND_URL', None) or request.build_absolute_uri('/').rstrip('/')
+    frontend_base = getattr(
+        settings, "FRONTEND_URL", None
+    ) or request.build_absolute_uri("/").rstrip("/")
     redirect_url = f"{frontend_base}/pay?session_id={session_id}"
     qr = qrcode.QRCode(
         version=1,
@@ -214,16 +232,20 @@ def initiate_transaction(request):
 
     logger.info(f"Transaction initiated by {vendor.email}: {session_id}")
 
-    return Response({
-        'transaction': TransactionSerializer(transaction).data,
-        'qr_code': f"data:image/png;base64,{img_str}",
-        'session_id': session_id,
-        'amount': str(amount),
-        'created_at': payment_session.created_at.isoformat(),
-        'message': 'Transaction initiated successfully'
-    }, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "transaction": TransactionSerializer(transaction).data,
+            "qr_code": f"data:image/png;base64,{img_str}",
+            "session_id": session_id,
+            "amount": str(amount),
+            "created_at": payment_session.created_at.isoformat(),
+            "message": "Transaction initiated successfully",
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def vendor_transactions(request):
     """
@@ -233,14 +255,15 @@ def vendor_transactions(request):
     transactions = Transaction.objects.filter(vendor=vendor)
 
     # Filter by status if provided
-    status_filter = request.query_params.get('status')
+    status_filter = request.query_params.get("status")
     if status_filter:
         transactions = transactions.filter(status=status_filter)
 
     serializer = TransactionSerializer(transactions, many=True)
     return Response(serializer.data)
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def vendor_dashboard_stats(request):
     """
@@ -252,40 +275,50 @@ def vendor_dashboard_stats(request):
     total_transactions = vendor.transactions.count()
 
     # Pending transactions
-    pending_count = vendor.transactions.filter(status='pending').count()
+    pending_count = vendor.transactions.filter(status="pending").count()
 
     # Paid transactions
-    paid_count = vendor.transactions.filter(status='paid').count()
+    paid_count = vendor.transactions.filter(status="paid").count()
 
     # Failed transactions
-    failed_count = vendor.transactions.filter(status='failed').count()
+    failed_count = vendor.transactions.filter(status="failed").count()
 
     # Total revenue
-    total_revenue = vendor.transactions.filter(status='paid').aggregate(
-        total=Sum('amount')
-    )['total'] or 0
+    total_revenue = (
+        vendor.transactions.filter(status="paid").aggregate(total=Sum("amount"))[
+            "total"
+        ]
+        or 0
+    )
 
     # Today's revenue
     today = timezone.now().date()
-    today_revenue = vendor.transactions.filter(
-        status='paid',
-        paid_at__date=today
-    ).aggregate(total=Sum('amount'))['total'] or 0
+    today_revenue = (
+        vendor.transactions.filter(status="paid", paid_at__date=today).aggregate(
+            total=Sum("amount")
+        )["total"]
+        or 0
+    )
 
     # Recent transactions
     recent_transactions = vendor.transactions.all()[:5]
 
-    return Response({
-        'total_transactions': total_transactions,
-        'pending_count': pending_count,
-        'paid_count': paid_count,
-        'failed_count': failed_count,
-        'total_revenue': float(total_revenue),
-        'today_revenue': float(today_revenue),
-        'recent_transactions': TransactionSerializer(recent_transactions, many=True).data
-    })
+    return Response(
+        {
+            "total_transactions": total_transactions,
+            "pending_count": pending_count,
+            "paid_count": paid_count,
+            "failed_count": failed_count,
+            "total_revenue": float(total_revenue),
+            "today_revenue": float(today_revenue),
+            "recent_transactions": TransactionSerializer(
+                recent_transactions, many=True
+            ).data,
+        }
+    )
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def transaction_detail(request, session_id):
     """
@@ -298,6 +331,5 @@ def transaction_detail(request, session_id):
         return Response(TransactionSerializer(transaction).data)
     except Transaction.DoesNotExist:
         return Response(
-            {'error': 'Transaction not found'},
-            status=status.HTTP_404_NOT_FOUND
+            {"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND
         )

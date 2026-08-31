@@ -8,7 +8,10 @@ from vendors.models import Transaction
 @admin.register(WebhookAudit)
 class WebhookAuditAdmin(admin.ModelAdmin):
     list_display = ("id", "event", "reference", "received_at", "processed")
-    list_filter = ("processed", "event",)
+    list_filter = (
+        "processed",
+        "event",
+    )
     search_fields = ("reference", "event", "result")
     readonly_fields = ("received_at", "payload", "headers", "result")
     actions = ("reprocess_webhooks",)
@@ -27,7 +30,9 @@ class WebhookAuditAdmin(admin.ModelAdmin):
                 # Try to resolve PaymentSession by reference
                 ps = None
                 if reference:
-                    ps = PaymentSession.objects.filter(paystack_reference=reference).first()
+                    ps = PaymentSession.objects.filter(
+                        paystack_reference=reference
+                    ).first()
 
                 # Fallback: try metadata.session_id from payload
                 if not ps:
@@ -39,7 +44,9 @@ class WebhookAuditAdmin(admin.ModelAdmin):
                 if not ps:
                     # Last-resort: try to find by audit.reference stored on audit
                     if audit.reference:
-                        ps = PaymentSession.objects.filter(paystack_reference=audit.reference).first()
+                        ps = PaymentSession.objects.filter(
+                            paystack_reference=audit.reference
+                        ).first()
 
                 if not ps:
                     audit.result = "reprocess:session_not_found"
@@ -92,8 +99,14 @@ class WebhookAuditAdmin(admin.ModelAdmin):
 
 @admin.register(PaymentSession)
 class PaymentSessionAdmin(admin.ModelAdmin):
-    list_display = ("session_id", "vendor", "amount", "status", "paystack_reference", "created_at")
+    list_display = (
+        "session_id",
+        "vendor",
+        "amount",
+        "status",
+        "paystack_reference",
+        "created_at",
+    )
     list_filter = ("status", "vendor")
     search_fields = ("session_id", "paystack_reference", "vendor__email")
     readonly_fields = ("created_at", "updated_at")
-
