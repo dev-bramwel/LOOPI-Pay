@@ -1,5 +1,22 @@
 ## 🚀 Setup Instructions
 
+### Docker Compose (recommended)
+
+From the repository root:
+
+```bash
+cp .env.example .env
+# Add Paystack credentials to .env when payment testing requires them.
+docker compose -f deployments/docker-compose.yml up --build
+```
+
+Open `http://localhost:5173`. PostgreSQL is persisted in the `postgres_data`
+volume, and the backend applies Django migrations automatically at startup.
+Use `docker compose -f deployments/docker-compose.yml down` to stop the stack.
+
+The Makefile provides shorter equivalents, for example `make up`, `make logs`,
+and `make down`.
+
 ### 1. Backend Setup
 
 ```bash
@@ -16,7 +33,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # Install dependencies (including new ones for vendors app)
-pip install -r requirements.txt
+pip install -r ../requirements.txt
 
 # Create .env file and add your Paystack keys
 cp .env.example .env

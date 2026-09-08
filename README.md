@@ -56,6 +56,29 @@ npm run dev
 
 Open the frontend dev server address printed by Vite (e.g. http://localhost:5173/) and sign in as a vendor to view the dashboard. The vendor dashboard shows a pinned LineChart at top of the dashboard view.
 
+## Docker Compose
+
+Docker Compose runs PostgreSQL, Django, and the built React application together.
+
+From the repository root:
+
+```bash
+cp .env.example .env
+# Edit .env and add Paystack credentials if payment testing requires them.
+docker compose -f deployments/docker-compose.yml up --build
+```
+
+Open `http://localhost:5173`. The backend API is also available at
+`http://localhost:8000`, and the backend container applies migrations before it
+starts Gunicorn. Stop the stack with `docker compose -f deployments/docker-compose.yml down`.
+
+For the production-shaped Compose configuration, provide all required values in
+`.env` and run:
+
+```bash
+docker compose -f deployments/docker-compose.production.yml up --build -d
+```
+
 ## Environment Variables
 
 - Frontend: `VITE_API_URL`, `VITE_FRONTEND_URL` (optional) — set in `.env` files or your shell when running Vite.
